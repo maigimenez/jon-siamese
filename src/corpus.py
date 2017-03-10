@@ -1,8 +1,9 @@
 import pandas as pd
-
+from os.path import join
 
 class Data:
     def __init__(self, tweet_a, tweet_b, similarity, one_hot):
+        # TODO: change tweet a/b for text a/b since it can be tweets or questions
         self._tweet_a = tweet_a
         self._tweet_b = tweet_b
         self._label = similarity
@@ -39,20 +40,25 @@ class Data:
 
 
 class Corpus:
-    def __init__(self, corpus_name, sim_path, non_sim_path):
+    def __init__(self, corpus_name, **kwargs):
         self._sim_data = []
         self._non_sim_data = []
         self._data_frame = None
 
         if corpus_name == 'similarity':
-            self._sim_path = sim_path
-            self._non_sim_path = non_sim_path
-            self._one_hot = {0: [0, 1], 1: [1, 0]}
+            self._sim_path = kwargs['sim_path']
+            self._non_sim_path = kwargs['non_sim_path']
             self.load_similarity()
 
         if corpus_name == 'quora':
-            # TODO
+            self._corpora_path = kwargs['corpus_path']
+            if 'partition' in kwargs.keys():
+                self._partition = kwargs['partition']
+                self._partitions_path = kwargs['partitions_path']
+            else:
+                self._partition = None
             self.load_quora()
+
 
     @property
     def sim_data(self):
@@ -83,12 +89,6 @@ class Corpus:
         assert len(set(sim_tags)) == 1
         assert next(iter(set(sim_tags))) == 1
 
-        # There is no need to use one-hot encoding for the siamese networks
-        # # Encode the similar tags using a one-hot representation
-        # sim_tags_encoded = [self._one_hot[tag] for tag in sim_tags]
-        # assert len(sim_tags_encoded) == len(sim_tags)
-        # assert len(sim_tweets) == len(sim_tags_encoded)
-
         # Save each pair of similar tweet within the data class
         for tws, tag in zip(sim_tweets, sim_tags):
             self._sim_data.append(Data(tws[0], tws[1], tag, [0, 1]))
@@ -100,19 +100,63 @@ class Corpus:
         assert len(set(not_sim_tags)) == 1
         assert next(iter(set(not_sim_tags))) == 0
 
-        # There is no need to use one-hot encodding for the siamese networks
-        # # Encode the non similar tags using a one-hot representation
-        # not_sim_tags_encoded = [self._one_hot[tag] for tag in not_sim_tags]
-        # assert len(not_sim_tags_encoded) == len(not_sim_tags)
-        # assert len(not_sim_tweets) == len(not_sim_tags_encoded)
-
         # Save each pair of non similar tweet within the data class
         for tws, tag in zip(not_sim_tweets, not_sim_tags):
             self._non_sim_data.append(Data(tws[0], tws[1], tag, [1, 0]))
 
-            # assert len(self._sim_data) == 5538
-            # assert len(self._non_sim_data) == 16379
+        # assert len(self._sim_data) == 5538
+        # assert len(self._non_sim_data) == 16379
+
+    def load_sim_quora(self):
+        # Load the similar questions or duplicate in this case
+        sim_questions = self._data_frame[self._data_frame['is_duplicate'] == 1][
+            ['question1', 'question2']].values.tolist()
+        sim_tags = self._data_frame[self._data_frame['is_duplicate'] == 1][
+            'is_duplicate'].values.tolist()
+        assert len(sim_questions) == len(sim_tags)
+        assert len(set(sim_tags)) == 1
+        assert next(iter(set(sim_tags))) == 1
+
+        # Save each pair of similar questions within the data class
+        for question, tag in zip(sim_questions, sim_tags):
+            self._sim_data.append(Data(question[0], question[1], tag, [0, 1]))
+
+    def load_non_sim_quora(self):
+        # Load the non similar questions or the non duplicated ones
+        non_sim_questions = self._data_frame[self._data_frame['is_duplicate'] == 0][
+            ['question1', 'question2']].values.tolist()
+        non_sim_tags = self._data_frame[self._data_frame['is_duplicate'] == 0]['is_duplicate'].values.tolist()
+        assert len(non_sim_questions) == len(non_sim_tags)
+        assert len(set(non_sim_tags)) == 1
+        assert next(iter(set(non_sim_tags))) == 0
+
+
+        # Save each pair of non similar questions within the data class
+        for question, tag in zip(non_sim_questions, non_sim_tags):
+            # There are two errors in the dataset.
+            # Ids: 105796, 201871 doesn't have a pair of questions.
+            # This condition prevent storing this value
+            if isinstance(question[0], str) and isinstance(question[1], str):
+                self._non_sim_data.append(Data(question[0], question[1], tag, [0, 1]))
 
     def load_quora(self):
-        # TODO
-        pass
+        self._data_frame = pd.read_csv(self._corpora_path, sep='\t', header=0)
+        self.load_sim_quora()
+        self.load_non_sim_quora()
+
+        # TODO modify it to return all the partitions at once.
+        # Load the partitions
+        if self._partition:
+            QUORA_PARTITION_PATH = join(self._partitions_path, self._partition + '.tsv')
+            patition_ids = [int(line.strip().split('\t')[-1]) for line in open(QUORA_PARTITION_PATH)]
+            if self._partition == 'train':
+                assert len(patition_ids) == 384348
+            else:
+                assert len(patition_ids) == 10000
+
+            # Replace the dataframe with only the rows from this partition and reload
+            self._data_frame = self._data_frame.loc[self._data_frame['id'].isin(patition_ids)]
+            assert len(patition_ids) == self._data_frame.shape[0]
+
+            self.load_sim_quora()
+            self.load_non_sim_quora()

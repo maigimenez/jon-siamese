@@ -4,12 +4,13 @@ from os.path import join, abspath, curdir, exists
 from time import time
 from collections import Counter
 
-from corpus import Corpus
-from utils import build_vocabulary, shuffle_epochs, batch_iter_mixed, batch_iter
-from siamese import Siamese
+from .corpus import Corpus
+from .utils import build_vocabulary, shuffle_epochs, batch_iter_mixed, batch_iter
+from .siamese import Siamese
 
 
 def from_text_index(corpus, vocab_processor):
+    # TODO: Move this method to corpus class since it modifies the attributes of the class.
     for data in corpus.non_sim_data:
         data.tweet_a = np.array(list(vocab_processor.transform([data.tweet_a])))[0]
         data.tweet_b = np.array(list(vocab_processor.transform([data.tweet_b])))[0]
@@ -19,17 +20,17 @@ def from_text_index(corpus, vocab_processor):
 
 
 def load_similarity_corpus():
-    TRAIN_SIM_PATH = '/home/mgimenez/Dev/projects/jon/dataset/isis_tr_sim.csv'
-    TRAIN_NOT_SIM_PATH = '/home/mgimenez/Dev/projects/jon/dataset/isis_tr_notsim.csv'
-    train_corpus = Corpus('similarity', TRAIN_SIM_PATH, TRAIN_NOT_SIM_PATH)
+    TRAIN_SIM_PATH = '/home/mgimenez/Dev/corpora/Similarity/dataset/isis_tr_sim.csv'
+    TRAIN_NOT_SIM_PATH = '/home/mgimenez/Dev/corpora/Similarity/dataset/isis_tr_notsim.csv'
+    train_corpus = Corpus('similarity', sim_path=TRAIN_SIM_PATH, non_sim_path=TRAIN_NOT_SIM_PATH)
 
-    VAL_SIM_PATH = '/home/mgimenez/Dev/projects/jon/dataset/isis_val_sim.csv'
-    VAL_NOT_SIM_PATH = '/home/mgimenez/Dev/projects/jon/dataset/isis_val_notsim.csv'
-    val_corpus = Corpus('similarity', VAL_SIM_PATH, VAL_NOT_SIM_PATH)
+    VAL_SIM_PATH = '/home/mgimenez/Dev/corpora/Similarity/dataset/isis_val_sim.csv'
+    VAL_NOT_SIM_PATH = '/home/mgimenez/Dev/corpora/Similarity/dataset/isis_val_notsim.csv'
+    val_corpus = Corpus('similarity', sim_path=VAL_SIM_PATH, non_sim_path=VAL_NOT_SIM_PATH)
 
-    TEST_SIM_PATH = '/home/mgimenez/Dev/projects/jon/dataset/isis_test_sim.csv'
-    TEST_NOT_SIM_PATH = '/home/mgimenez/Dev/projects/jon/dataset/isis_test_notsim.csv'
-    test_corpus = Corpus('similarity', TEST_SIM_PATH, TEST_NOT_SIM_PATH)
+    TEST_SIM_PATH = '/home/mgimenez/Dev/corpora/Similarity/dataset/isis_test_sim.csv'
+    TEST_NOT_SIM_PATH = '/home/mgimenez/Dev/corpora/Similarity/dataset/isis_test_notsim.csv'
+    test_corpus = Corpus('similarity', sim_path=TEST_SIM_PATH, non_sim_path=TEST_NOT_SIM_PATH)
 
     # Build the vocabulary
     vocab_processor, sequence_length = build_vocabulary(train_corpus)
@@ -41,6 +42,24 @@ def load_similarity_corpus():
 
     return train_corpus, val_corpus, test_corpus, sequence_length, vocab_processor
 
+
+def load_quora_partition():
+    QUORA_PATH = '/home/mgimenez/Dev/corpora/Quora/quora_duplicate_questions.tsv'
+    QUORA_PARTITIONS = '/home/mgimenez/Dev/corpora/Quora/Quora_question_pair_partition'
+
+    train_quora = Corpus('quora', corpus_path=QUORA_PATH, partition='train', partitions_path=QUORA_PARTITIONS)
+    dev_quora = Corpus('quora', corpus_path=QUORA_PATH, partition='dev', partitions_path=QUORA_PARTITIONS)
+    test_quora = Corpus('quora', corpus_path=QUORA_PATH, partition='test', partitions_path=QUORA_PARTITIONS)
+
+    # Build the vocabulary
+    vocab_processor, sequence_length = build_vocabulary(train_quora)
+
+    # Convert the words to the lookup index
+    from_text_index(train_quora, vocab_processor)
+    from_text_index(test_quora, vocab_processor)
+    from_text_index(dev_quora, vocab_processor)
+
+    return train_quora, dev_quora, test_quora, sequence_length, vocab_processor
 
 def default_flags():
     flags = tf.app.flags
@@ -94,17 +113,29 @@ def build_data_feed(corpus):
 
 def test_step(sess, siamese, test_corpus, merged):
     """
-    Evaluates model on a dev set
+    Evaluates model on a test set
     """
     test_left_sentences, test_right_sentences, test_sim_labels = build_data_feed(test_corpus)
     feed_dict = {siamese.left_input: test_left_sentences,
                  siamese.right_input: test_right_sentences,
                  siamese.label: test_sim_labels}
-    loss, distance, accuracy, summary_str = sess.run([siamese.loss, siamese.distance, siamese.accuracy, merged],
-                                                     feed_dict)
+    loss, distance, accuracy, left_tensor, right_tensor, summary_str = sess.run([siamese.loss,
+                                                                                 siamese.distance,
+                                                                                 siamese.accuracy,
+                                                                                 siamese.left_sigmoid,
+                                                                                 siamese.right_tensor,
+                                                                                 merged],
+                                                                                feed_dict)
 
+    print(type(left_tensor), left_tensor.shape, type(right_tensor), right_tensor.shape,
+          type(test_sim_labels), len(test_sim_labels))
     print("--> TEST")
     print("\t     Loss: {0:.4f} (d: {1:.4f}) accuracy: {2:.4f}\n".format(loss, np.mean(distance), accuracy))
+
+    np.save('test_left_tensors.npy', left_tensor)
+    np.save('test_right_tensors.npy', right_tensor)
+    np.save('test_labels.npy', np.array(test_sim_labels))
+    np.savez('test_tensors', labels=np.array(test_sim_labels), left=left_tensor, right=right_tensor)
 
 
 def dev_step(sess, siamese, val_left_sentences, val_right_sentences, val_sim_labels, merged, epoch):
