@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from os.path import join, abspath, curdir, exists
-from time import time
+from time import time, sleep
 from collections import Counter
 
 from .corpus import Corpus
@@ -73,7 +73,6 @@ def default_flags():
     FLAGS.embedding_dim = 300
     FLAGS.filter_sizes = '3,4,5'
     FLAGS.num_filters = 100
-    FLAGS.num_epochs = 10
 
     # Training parameters
     FLAGS.batch_size = 100
@@ -111,32 +110,41 @@ def build_data_feed(corpus):
     return right_sentences, left_sentences, labels
 
 
-def test_step(sess, siamese, test_corpus, merged):
+def test_step(sess, siamese, test_corpus, merged, hash_size=None):
     """
     Evaluates model on a test set
     """
     test_left_sentences, test_right_sentences, test_sim_labels = build_data_feed(test_corpus)
+
     feed_dict = {siamese.left_input: test_left_sentences,
                  siamese.right_input: test_right_sentences,
                  siamese.label: test_sim_labels}
-    loss, distance, accuracy, left_tensor, right_tensor, summary_str = sess.run([siamese.loss,
-                                                                                 siamese.distance,
-                                                                                 siamese.accuracy,
-                                                                                 siamese.left_sigmoid,
-                                                                                 siamese.right_tensor,
-                                                                                 merged],
-                                                                                feed_dict)
+    if hash_size is not None:
+        (loss, distance, accuracy,
+         fully_left, fully_right,
+         left_tensor, right_tensor, summary_str) = sess.run([siamese.loss, siamese.distance, siamese.accuracy,
+                                                             siamese.fully_left, siamese.fully_right,
+                                                             siamese.left_tensor, siamese.right_tensor, merged],
+                                                            feed_dict)
+        left_filename = 'test_left_' + str(hash_size) + '.npy'
+        np.save(left_filename, fully_left)
+        right_filename = 'test_right_' + str(hash_size) + '.npy'
+        np.save(right_filename, fully_right)
 
-    print(type(left_tensor), left_tensor.shape, type(right_tensor), right_tensor.shape,
-          type(test_sim_labels), len(test_sim_labels))
+    else:
+        (loss, distance, accuracy,
+         left_embedded, right_embedded,
+         left_tensor, right_tensor, summary_str) = sess.run([siamese.loss, siamese.distance, siamese.accuracy,
+                                                             siamese.left_embedded, siamese.right_embedded,
+                                                             siamese.left_tensor, siamese.right_tensor, merged],
+                                                            feed_dict)
+
     print("--> TEST")
     print("\t     Loss: {0:.4f} (d: {1:.4f}) accuracy: {2:.4f}\n".format(loss, np.mean(distance), accuracy))
 
     np.save('test_left_tensors.npy', left_tensor)
     np.save('test_right_tensors.npy', right_tensor)
     np.save('test_labels.npy', np.array(test_sim_labels))
-    np.savez('test_tensors', labels=np.array(test_sim_labels), left=left_tensor, right=right_tensor)
-
 
 def dev_step(sess, siamese, val_left_sentences, val_right_sentences, val_sim_labels, merged, epoch):
     # EVALUATE
@@ -148,11 +156,15 @@ def dev_step(sess, siamese, val_left_sentences, val_right_sentences, val_sim_lab
     print("\t     Loss: {0:.4f} (d: {1:.4f}) Accuracy: {2:.4f}\n".format(loss, np.mean(d), accuracy))
 
 
-def train_siamese(margin, threshold, sequence_length, vocab_processor, train_corpus, val_corpus, test_corpus, config_flags=None):
-    if not config_flags:
-        FLAGS = default_flags()
-    else:
-        FLAGS = config_flags
+def train_siamese(margin, threshold, sequence_length, vocab_processor, train_corpus, val_corpus, test_corpus,
+                  config_flags=None, hash_size=None):
+
+    print('----->', hash_size)
+    left_name =  'test_left_' + str(hash_size) + '.npy'
+    print(left_name)
+
+    FLAGS = default_flags() if not config_flags else config_flags
+    contrastive_fully = True if hash_size is not None else False
 
     val_left_sentences, val_right_sentences, val_sim_labels = build_data_feed(val_corpus)
 
@@ -169,7 +181,9 @@ def train_siamese(margin, threshold, sequence_length, vocab_processor, train_cor
                               filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
                               num_filters=FLAGS.num_filters,
                               margin=margin,
-                              threshold=threshold)
+                              threshold=threshold,
+                              contrastive_fully=contrastive_fully,
+                              hash_size=hash_size)
 
             global_step = tf.Variable(0, trainable=False)
             starter_learning_rate = 0.1
@@ -240,6 +254,7 @@ def train_siamese(margin, threshold, sequence_length, vocab_processor, train_cor
                     sim_labels = [sample.label for sample in batch_data]
                     # print(Counter(sim_labels))
                     assert len(right_sentences) == len(left_sentences) == len(sim_labels)
+
                     _, loss, attraction, repulsion, d, accuracy, predictions, correct, summary_str = sess.run(
                         [train_step, siamese.loss,
                          siamese.attraction_loss, siamese.repulsion_loss,
@@ -267,15 +282,19 @@ def train_siamese(margin, threshold, sequence_length, vocab_processor, train_cor
                                                                              np.array(non_sim_distances).mean()))
 
                 dev_step(sess, siamese, val_left_sentences, val_right_sentences, val_sim_labels, merged, epoch)
+
             del val_left_sentences, val_right_sentences, val_sim_labels, val_corpus
             del train_corpus
 
-            test_step(sess, siamese, test_corpus, merged)
+            test_step(sess, siamese, test_corpus, merged, hash_size)
 
 
-def simmilarty_experiment(margin=1.5, threshold=1.0, config_flags=None):
+def simmilarty_experiment(margin=1.5, threshold=1.0,
+                          config_flags=None, contrastive_fully=False, hash_size=None):
+    print('SIMILARITY ----->', hash_size)
     train, val, test, sequence_len, vocab_processor = load_similarity_corpus()
-    train_siamese(margin, threshold, sequence_len, vocab_processor, train, val, test, config_flags)
+    train_siamese(margin, threshold, sequence_len, vocab_processor, train, val, test,
+                  config_flags, hash_size)
 
 if __name__ == "__main__":
     simmilarty_experiment()
