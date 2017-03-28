@@ -11,13 +11,16 @@ def compute_euclidean_distance(x, y):
 
 
 class SiameseSubnet:
-    def __init__(self, input_x, sequence_length, vocab_size, embedding_size, filter_sizes, num_filters):
+    def __init__(self, input_x, sequence_length, vocab_size, embedding_size, filter_sizes, num_filters,
+                 fully=False, hash_size=None):
         self.input_x = input_x
         self.sequence_length = sequence_length
         self.vocab_size = vocab_size
         self.embedding_size = embedding_size
         self.filter_sizes = filter_sizes
         self.num_filters = num_filters
+        self.fully_layer = fully
+        self.hash_size = hash_size
 
     def create_model(self, subnet_name, reuse=True):
         # 1ST LAYER: Embedding layer
@@ -43,8 +46,6 @@ class SiameseSubnet:
                                                        weights_initializer=init_weights,
                                                        scope=conv_scope, reuse=reuse)
                 conv_outputs.append(output_conv)
-
-                print('---> CONV: ', output_conv)
                 conv_heigh = output_conv.get_shape()[1]
                 pool_size = [1, conv_heigh, 1, 1]
                 pooled = tf.nn.max_pool(output_conv, ksize=pool_size, strides=[1, 1, 1, 1],
@@ -58,26 +59,42 @@ class SiameseSubnet:
         print('---> HPOOL:', self.h_pool)
         self.h_pool_flat = tf.reshape(self.h_pool, [-1, num_filters_total])
         print('---> CONCAT:', self.h_pool_flat)
-        return self.embedded_words_expanded, self.h_pool_flat, conv_outputs
+
+        with tf.variable_scope("fully") as fully_scope:
+            print('HASH TRAIN  ----->', self.hash_size)
+            fully_shape = [self.h_pool_flat.get_shape().as_list()[1], self.hash_size]
+            w_fully = tf.get_variable("w_fully", fully_shape,
+                                      initializer=tf.random_normal_initializer())
+            b_fully = tf.get_variable("biases", [self.hash_size],
+                                      initializer=tf.constant_initializer(0.1))
+
+            #w_fully = tf.get_variable("W_fully", fully_shape, tf.truncated_normal(fully_shape, stddev=0.1))
+            #b_fully = tf.get_variable("b_fully", tf.constant(0.1, shape=[self.hash_size]))
+            self.fully = tf.nn.sigmoid(tf.matmul(self.h_pool_flat, w_fully) + b_fully)
+            print('---> FULLY:', self.fully)
+
+        return self.h_pool_flat, self.fully
 
 
 class Siamese:
     def __init__(self, sequence_length, vocab_size, embedding_size, filter_sizes, num_filters,
-                 margin=1.5, threshold=1.0, contrastive_fully=False, hash_size=64):
+                 margin=1.5, threshold=1.0, fully=False, hash_size=None):
+        print('HASH TRAIN  ----->', hash_size)
         # TODO Study how to modify this in order to not run out of GPU memory
         with tf.device('/cpu:0'):
-            with tf.name_scope("siamese"):
+            with tf.variable_scope("siamese") as siamese_scope:
                 self.left_input = tf.placeholder(tf.int32, [None, sequence_length], name='left')
                 self.right_input = tf.placeholder(tf.int32, [None, sequence_length], name='right')
 
                 self.left_siamese = SiameseSubnet(self.left_input, sequence_length, vocab_size,
-                                                  embedding_size, filter_sizes, num_filters)
-                self.left_embedded, self.left_tensor, self.left_conv = self.left_siamese.create_model('left', reuse=False)
+                                                  embedding_size, filter_sizes, num_filters, fully, hash_size)
+                self.left_tensor, self.fully_left = self.left_siamese.create_model('left', reuse=False)
                 # self.left_sigmoid = tf.nn.sigmoid(self.left_tensor)
+                siamese_scope.reuse_variables()
 
                 self.right_siamese = SiameseSubnet(self.right_input, sequence_length, vocab_size,
-                                                   embedding_size, filter_sizes, num_filters)
-                self.right_embedded, self.right_tensor, self.right_conv = self.right_siamese.create_model('right', reuse=True)
+                                                   embedding_size, filter_sizes, num_filters, hash_size)
+                self.right_tensor, self.fully_right = self.right_siamese.create_model('right', reuse=True)
                 # self.right_sigmoid = tf.nn.sigmoid(self.right_tensor)
 
             with tf.name_scope("similarity"):
@@ -86,19 +103,7 @@ class Siamese:
                 print('---->', self.label)
 
                 self.margin = margin
-                if contrastive_fully:
-                    # Fully connected layer
-                    fully_shape = [self.right_tensor.get_shape().as_list()[1], hash_size]
-                    w_fully_r = tf.Variable(tf.truncated_normal(fully_shape, stddev=0.1), name="W_right")
-                    b_fully_r = tf.Variable(tf.constant(0.1, shape=[hash_size]), name="b_right")
-                    self.fully_right = tf.nn.sigmoid(tf.matmul(self.right_tensor, w_fully_r) + b_fully_r)
-                    print('RIGHT Fully', self.fully_right)
-
-                    w_fully_l = tf.Variable(tf.truncated_normal(fully_shape, stddev=0.1), name="W_left")
-                    b_fully_l = tf.Variable(tf.constant(0.1, shape=[hash_size]), name="b_left")
-                    self.fully_left = tf.nn.sigmoid(tf.matmul(self.left_tensor, w_fully_l) + b_fully_l)
-                    print('RIGHT Left', self.fully_left)
-
+                if fully:
                     (self.loss, self.attraction_loss,
                      self.repulsion_loss, self.distance) = self.contrastive_loss(self.margin,
                                                                                  self.fully_left,
@@ -119,7 +124,7 @@ class Siamese:
                 print(self.predictions)
                 print(self.label)
                 self.correct_predictions = tf.equal(self.predictions, self.label)
-                print("CORRECT:", self.correct_predictions)
+                print("---> CORRECT:", self.correct_predictions)
                 self.accuracy = tf.reduce_mean(tf.cast(self.correct_predictions, tf.float32))
 
 
@@ -134,7 +139,18 @@ class Siamese:
 
 
         Compute the contrastive loss as in as in
-            https://gitlab.idiap.ch/biometric/xfacereclib.cnn/blob/master/xfacereclib/cnn/scripts/experiment.py#L156
+          `-+
+
+
+
+
+
+
+
+
+
+
+          L156
             With Y = [-1 +1] --> [POSITIVE_PAIR NEGATIVE_PAIR]
             L = log( m + exp( Y * d^2)) / N
 
