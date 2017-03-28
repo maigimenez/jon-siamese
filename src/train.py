@@ -133,18 +133,18 @@ def test_step(sess, siamese, test_corpus, merged, hash_size=None):
 
     else:
         (loss, distance, accuracy,
-         left_embedded, right_embedded,
          left_tensor, right_tensor, summary_str) = sess.run([siamese.loss, siamese.distance, siamese.accuracy,
-                                                             siamese.left_embedded, siamese.right_embedded,
                                                              siamese.left_tensor, siamese.right_tensor, merged],
                                                             feed_dict)
 
     print("--> TEST")
     print("\t     Loss: {0:.4f} (d: {1:.4f}) accuracy: {2:.4f}\n".format(loss, np.mean(distance), accuracy))
 
-    np.save('test_left_tensors.npy', left_tensor)
-    np.save('test_right_tensors.npy', right_tensor)
-    np.save('test_labels.npy', np.array(test_sim_labels))
+    #np.save('test_left_tensors.npy', left_tensor)
+    #np.save('test_right_tensors.npy', right_tensor)
+    labels_fielename = 'test_labels' + str(hash_size) + '.npy'
+    np.save(labels_fielename, np.array(test_sim_labels))
+
 
 def dev_step(sess, siamese, val_left_sentences, val_right_sentences, val_sim_labels, merged, epoch):
     # EVALUATE
@@ -159,12 +159,8 @@ def dev_step(sess, siamese, val_left_sentences, val_right_sentences, val_sim_lab
 def train_siamese(margin, threshold, sequence_length, vocab_processor, train_corpus, val_corpus, test_corpus,
                   config_flags=None, hash_size=None):
 
-    print('----->', hash_size)
-    left_name =  'test_left_' + str(hash_size) + '.npy'
-    print(left_name)
-
     FLAGS = default_flags() if not config_flags else config_flags
-    contrastive_fully = True if hash_size is not None else False
+    fully_layer = True if hash_size is not None else False
 
     val_left_sentences, val_right_sentences, val_sim_labels = build_data_feed(val_corpus)
 
@@ -175,6 +171,7 @@ def train_siamese(margin, threshold, sequence_length, vocab_processor, train_cor
 
         sess = tf.Session(config=session_conf)
         with sess.as_default():
+            print('HASH TRAIN  ----->', hash_size)
             siamese = Siamese(sequence_length,
                               vocab_size=len(vocab_processor.vocabulary_),
                               embedding_size=FLAGS.embedding_dim,
@@ -182,7 +179,7 @@ def train_siamese(margin, threshold, sequence_length, vocab_processor, train_cor
                               num_filters=FLAGS.num_filters,
                               margin=margin,
                               threshold=threshold,
-                              contrastive_fully=contrastive_fully,
+                              fully=fully_layer,
                               hash_size=hash_size)
 
             global_step = tf.Variable(0, trainable=False)
@@ -289,12 +286,22 @@ def train_siamese(margin, threshold, sequence_length, vocab_processor, train_cor
             test_step(sess, siamese, test_corpus, merged, hash_size)
 
 
-def simmilarty_experiment(margin=1.5, threshold=1.0,
-                          config_flags=None, contrastive_fully=False, hash_size=None):
+def simmilarty_experiment(margin=1.5, threshold=1.0, config_flags=None, hash_size=None):
     print('SIMILARITY ----->', hash_size)
+
     train, val, test, sequence_len, vocab_processor = load_similarity_corpus()
     train_siamese(margin, threshold, sequence_len, vocab_processor, train, val, test,
                   config_flags, hash_size)
 
+
+def kaggle_experiment():
+    KAGGLE_PATH = '/home/mgimenez/Dev/corpora/Quora/Kaggle/'
+    TRAIN_KAGGLE = 'train.csv'
+    TEST_KAGGLE = 'test.csv'
+
+    train = Corpus('kaggle', corpus_path=KAGGLE_PATH, partition='train', partitions_path=TRAIN_KAGGLE)
+    test = Corpus('kaggle', corpus_path=KAGGLE_PATH, partition='test', partitions_path=TEST_KAGGLE)
+
 if __name__ == "__main__":
-    simmilarty_experiment()
+    # simmilarty_experiment()
+    kaggle_experiment()

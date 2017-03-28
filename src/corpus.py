@@ -2,7 +2,7 @@ import pandas as pd
 from os.path import join
 
 class Data:
-    def __init__(self, tweet_a, tweet_b, similarity, one_hot):
+    def __init__(self, tweet_a, tweet_b, similarity=None, one_hot=None):
         # TODO: change tweet a/b for text a/b since it can be tweets or questions
         self._tweet_a = tweet_a
         self._tweet_b = tweet_b
@@ -43,6 +43,7 @@ class Corpus:
     def __init__(self, corpus_name, **kwargs):
         self._sim_data = []
         self._non_sim_data = []
+        self._test_data = None
         self._data_frame = None
 
         if corpus_name == 'similarity':
@@ -59,6 +60,10 @@ class Corpus:
                 self._partition = None
             self.load_quora()
 
+        if corpus_name == 'kaggle':
+            self._corpora_path = join(kwargs['corpus_path'], kwargs['partitions_path'])
+            self._partition = kwargs['partition']
+            self.load_kaggle()
 
     @property
     def sim_data(self):
@@ -67,6 +72,10 @@ class Corpus:
     @property
     def non_sim_data(self):
         return self._non_sim_data
+
+    @property
+    def test_data(self):
+        return self._test_data
 
     def load_similarity(self):
         """ Load the Similarity dataset buit by Jesús Alonso
@@ -107,6 +116,7 @@ class Corpus:
         # assert len(self._sim_data) == 5538
         # assert len(self._non_sim_data) == 16379
 
+
     def load_sim_quora(self):
         # Load the similar questions or duplicate in this case
         sim_questions = self._data_frame[self._data_frame['is_duplicate'] == 1][
@@ -129,7 +139,6 @@ class Corpus:
         assert len(non_sim_questions) == len(non_sim_tags)
         assert len(set(non_sim_tags)) == 1
         assert next(iter(set(non_sim_tags))) == 0
-
 
         # Save each pair of non similar questions within the data class
         for question, tag in zip(non_sim_questions, non_sim_tags):
@@ -160,3 +169,15 @@ class Corpus:
 
             self.load_sim_quora()
             self.load_non_sim_quora()
+
+    def load_kaggle(self):
+        self._data_frame = pd.read_csv(self._corpora_path, header=0)
+        if self._partition == 'test':
+            self._test_data = []
+            for q1, q2 in self._data_frame[['question1', 'question2']].values:
+                self._test_data.append(Data(q1, q2))
+            assert len(self._test_data) == 2345796
+        else:
+            self.load_sim_quora()
+            self.load_non_sim_quora()
+
