@@ -10,9 +10,15 @@ class Data:
         self._oneh_label = one_hot
 
     def __repr__(self):
-        tweet_a_summary = ' '.join(self._tweet_a.split()[:5]) + '...'
-        tweet_b_summary = ' '.join(self._tweet_b.split()[:5]) + '...'
-        return '({} - {}): {}'.format(tweet_a_summary, tweet_b_summary, self._label)
+        if isinstance(self.tweet_a, str):
+            tweet_a_summary = ' '.join(self._tweet_a.split()[:5]) + '...'
+            tweet_b_summary = ' '.join(self._tweet_b.split()[:5]) + '...'
+            return '({} - {}): {}'.format(tweet_a_summary, tweet_b_summary, self._label)
+        else:
+            tweet_a_summary = ', '.join([str(v) for v in self.tweet_a[:5]])
+            tweet_b_summary = ', '.join([str(v) for v in self.tweet_b[:5]])
+            return '([{}, ...] - [{}, ...] ({})): {}'.format(tweet_a_summary, tweet_b_summary,
+                                                             self.tweet_a.shape[0], self._label)
 
     @property
     def tweet_a(self):
@@ -40,7 +46,7 @@ class Data:
 
 
 class Corpus:
-    def __init__(self, corpus_name, **kwargs):
+    def __init__(self, corpus_name=None, **kwargs):
         self._sim_data = []
         self._non_sim_data = []
         self._test_data = None
