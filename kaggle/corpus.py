@@ -5,7 +5,7 @@ from utils import preprocess_sentence
 
 
 class Data:
-    def __init__(self, pair_id, sentence_1, sentence_2, duplicated, one_hot):
+    def __init__(self, pair_id, sentence_1, sentence_2, duplicated=None, one_hot=None):
         self._pair_id = int(pair_id)
         self._sentence_1 = sentence_1
         self._sentence_2 = sentence_2
@@ -46,6 +46,11 @@ class Data:
     @property
     def pair_id(self):
         return self._pair_id
+
+    @property
+    def oneh_label(self):
+        return self._oneh_label
+
 
 class Corpus:
     def __init__(self, **kwargs):
