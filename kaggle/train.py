@@ -2,10 +2,19 @@ import tensorflow as tf
 import numpy as np
 import pickle
 from time import time
-from os.path import join, abspath, curdir
+from os.path import join, abspath, curdir, isdir
 
 from siamese_pr import Siamese
+import argparse
 
+
+def get_arguments():
+    parser = argparse.ArgumentParser(description='Create TF Records from Kaggle CSV')
+    parser.add_argument('--tf', metavar='r', type=str,
+                        help='Path where the tfrecords are',
+                        dest='tf_path')
+    args = parser.parse_args()
+    return args.tf_path
 
 def default_flags():
     flags = tf.app.flags
@@ -45,7 +54,7 @@ def read_sample(filename_queue):
     _, serialized_sample = reader.read(filename_queue)
     features = tf.parse_single_example(
         serialized_sample,
-        features={'label': tf.FixedLenFeature([], tf.int64),
+        features={'label': tf.FixedLenFeature([2], tf.int64),
                   'sentence_1': tf.FixedLenFeature([sequence_length], tf.int64),
                   'sentence_2': tf.FixedLenFeature([sequence_length], tf.int64)})
     return features['label'], features['sentence_1'], features['sentence_2']
@@ -69,12 +78,12 @@ def input_pipeline(filepath, batch_size, num_epochs=None):
 
 
 if __name__ == "__main__":
-    RECORDS_PATH = '/home/mgimenez/Dev/projects/jon-siamese/kaggle/bin_data/preprocess60'
-    TRAIN_PATH = join(RECORDS_PATH, 'train.tfrecords')
+    tf_path = get_arguments()
+    train_path = join(tf_path, 'train.tfrecords')
 
-    vocab_processor_path = join(RECORDS_PATH, 'vocab.train')
+    vocab_processor_path = join(tf_path, 'vocab.train')
     vocab_processor = load_binarize_data(vocab_processor_path)
-    sequence_length_path = join(RECORDS_PATH, 'sequence_length')
+    sequence_length_path = join(tf_path, 'sequence.len')
     sequence_length = load_binarize_data(sequence_length_path)
 
     # init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
@@ -82,7 +91,7 @@ if __name__ == "__main__":
     FLAGS = default_flags()
 
     with tf.Graph().as_default():
-        label_batch, sentences_1_batch, sentences_2_batch = input_pipeline(filepath=TRAIN_PATH,
+        label_batch, sentences_1_batch, sentences_2_batch = input_pipeline(filepath=train_path,
                                                                            batch_size=FLAGS.batch_size,
                                                                            num_epochs=FLAGS.num_epochs)
         print(type(label_batch), type(sentences_1_batch), type(sentences_2_batch))
@@ -139,6 +148,7 @@ if __name__ == "__main__":
 
 
                     # TRAIN WITH PROBABILITIES
+                    sess.run(sess.run(label_batch))
                     _, loss, acc = \
                         sess.run([train_op, siamese.loss, siamese.accuracy],
                                  feed_dict={
@@ -160,5 +170,9 @@ if __name__ == "__main__":
                 coord.request_stop()
 
             coord.join(threads)
-            save_path = saver.save(sess, "model.ckpt")
-            print("Model saved in file: %s" % save_path)
+
+            # Save the model
+            timestamp = str(int(time()))
+            out_dir = abspath(join(curdir, "models", timestamp))
+            save_path = saver.save(sess, join(out_dir, "model.ckpt"))
+            print("Model saved in file: {}".format(save_path))

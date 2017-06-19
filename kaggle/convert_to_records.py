@@ -2,37 +2,62 @@ import tensorflow as tf
 from corpus import Corpus
 from utils import build_vocabulary
 import pickle
+import argparse
+from os.path import join, isdir
+from os import makedirs
+
+
+def get_arguments():
+    parser = argparse.ArgumentParser(description='Create TF Records from Kaggle CSV')
+    parser.add_argument('--data', metavar='d', type=str,
+                        help='Path where the Kaggle dataset is.',
+                        dest='dataset_path')
+
+    parser.add_argument('--out', metavar='o', type=str,
+                        help='Path where the tf records will be saved.',
+                        dest='output_path')
+
+    parser.add_argument('-p', action='store_true', default=False,
+                        help='Apply a pre-processing phase',
+                        dest='preprocess')
+
+    args = parser.parse_args()
+    return args.dataset_path, args.output_path, args.preprocess
 
 if __name__ == "__main__":
+    dataset_path, output_path, preprocess = get_arguments()
+
     # Filepaths where the dataset is found
-    KAGGLE_PATH = '/home/mgimenez/Dev/corpora/Quora/Kaggle/'
-    TRAIN_KAGGLE = 'train.csv'
-    TEST_KAGGLE = 'test.csv'
+    # KAGGLE_PATH = '/home/mgimenez/Dev/corpora/Quora/Kaggle/'
+    TRAIN_KAGGLE = join(dataset_path, 'train.csv')
+    TEST_KAGGLE = join(dataset_path, 'test.csv')
 
     # Read the dataset
-    train = Corpus(corpus_path=KAGGLE_PATH, partition='train', partitions_path=TRAIN_KAGGLE, preprocess=True)
+    train = Corpus(corpus_path=dataset_path, partition='train', partitions_path=TRAIN_KAGGLE, preprocess=preprocess)
     print(len(train.sim_data), len(train.non_sim_data), train.sim_data[0],  train.non_sim_data[0], train._data_frame.shape)
-    pickle.dump(train, open("kaggle.train", "wb"))
+    # pickle.dump(train, open("kaggle.train", "wb"))
 
-    test = Corpus(corpus_path=KAGGLE_PATH, partition='test', partitions_path=TEST_KAGGLE, preprocess=True)
+    test = Corpus(corpus_path=dataset_path, partition='test', partitions_path=TEST_KAGGLE, preprocess=preprocess)
     print(len(test.test_data), test._data_frame.shape)
-    pickle.dump(test, open("kaggle.test", "wb"))
+    # pickle.dump(test, open("kaggle.test", "wb"))
+
+    if not isdir(output_path):
+        makedirs(output_path)
 
     vocab_processor, sequence_length = build_vocabulary(train)
-    pickle.dump(vocab_processor, open("vocab.train", "wb"))
-    pickle.dump(sequence_length, open("sequence_length", "wb"))
+    pickle.dump(vocab_processor, open(join(output_path, "vocab.train"), "wb"))
+    pickle.dump(sequence_length, open(join(output_path, "sequence.len"), "wb"))
 
     train.to_index(vocab_processor)
-    # print('TRAIN', len(train.sim_data), len(train.non_sim_data), train.sim_data[0], train.non_sim_data[0])
     test.to_index(vocab_processor)
-    # print('TEST', type(test.test_data), len(test.test_data))
 
-    writer = tf.python_io.TFRecordWriter("train.tfrecords")
+    # Write the TF records
+    writer = tf.python_io.TFRecordWriter(join(output_path, "train.tfrecords"))
     for data in train.sim_data:
         example = tf.train.Example(
             features=tf.train.Features(
                 feature={
-                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=[data.label])),
+                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=data.oneh_label)),
                     'sentence_1': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_1.astype("int64"))),
                     'sentence_2': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_2.astype("int64"))),
                 }))
@@ -41,13 +66,14 @@ if __name__ == "__main__":
         example = tf.train.Example(
             features=tf.train.Features(
                 feature={
-                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=[data.label])),
+                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=data.oneh_label)),
                     'sentence_1': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_1.astype("int64"))),
                     'sentence_2': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_2.astype("int64"))),
                 }))
         writer.write(example.SerializeToString())
 
-    writer = tf.python_io.TFRecordWriter("test.tfrecords")
+
+    writer = tf.python_io.TFRecordWriter(join(output_path, "test.tfrecords"))
     for i, data in enumerate(test.test_data):
         print(i)
         example = tf.train.Example(
