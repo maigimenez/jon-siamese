@@ -21,11 +21,15 @@ def get_arguments():
                         help='Apply a pre-processing phase',
                         dest='preprocess')
 
+    parser.add_argument('-o', action='store_true', default=False,
+                        help='Save the one-hot encoding',
+                        dest='one_hot')
+
     args = parser.parse_args()
-    return args.dataset_path, args.output_path, args.preprocess
+    return args.dataset_path, args.output_path, args.preprocess, args.one_hot
 
 if __name__ == "__main__":
-    dataset_path, output_path, preprocess = get_arguments()
+    dataset_path, output_path, preprocess, one_hot = get_arguments()
 
     # Filepaths where the dataset is found
     # KAGGLE_PATH = '/home/mgimenez/Dev/corpora/Quora/Kaggle/'
@@ -54,19 +58,21 @@ if __name__ == "__main__":
     # Write the TF records
     writer = tf.python_io.TFRecordWriter(join(output_path, "train.tfrecords"))
     for data in train.sim_data:
+        data_label = data.oneh_label if one_hot else [data.label]
         example = tf.train.Example(
             features=tf.train.Features(
                 feature={
-                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=data.oneh_label)),
+                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=data_label)),
                     'sentence_1': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_1.astype("int64"))),
                     'sentence_2': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_2.astype("int64"))),
                 }))
         writer.write(example.SerializeToString())
     for data in train.non_sim_data:
+        data_label = data.oneh_label if one_hot else [data.label]
         example = tf.train.Example(
             features=tf.train.Features(
                 feature={
-                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=data.oneh_label)),
+                    'label': tf.train.Feature(int64_list=tf.train.Int64List(value=data_label)),
                     'sentence_1': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_1.astype("int64"))),
                     'sentence_2': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_2.astype("int64"))),
                 }))
