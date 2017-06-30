@@ -4,7 +4,7 @@ from tensorflow.contrib import learn
 import configparser
 import tensorflow as tf
 import numpy as np
-
+from os.path import join
 
 def preprocess_sentence(sentence, max_len=60):
     """ Pre-process a sentence: remove stop words and lowercase the sentence
@@ -46,12 +46,31 @@ def build_vocabulary(sim_data, non_sim_data):
     return vocab_processor, max_document_length
 
 
+def write_flags(hyperparams, params, flags_path):
+    config = configparser.ConfigParser()
+    config['GPU'] = {'allow_soft_placement': 'True',
+                     'log_device_placement': 'False'}
+
+    config['Hyperparameters'] = {}
+    for key, value in hyperparams.items():
+        config['Hyperparameters'][key] = value
+
+    config['Training'] = {}
+    for key, value in params.items():
+
+        config['Training'][key] = value
+    config['Training']['Batch size'] = '100'
+    config['Training']['Shuffle epochs'] = 'True'
+    with open(flags_path, 'w') as configfile:
+        config.write(configfile)
+
+
 def read_flags(config_filepath=None):
     """ Read the flags for the NN from a config file """
 
     config = configparser.ConfigParser()
     if not config_filepath:
-        config_filepath = 'default.flags'
+        config_filepath = '../config/default.flags'
     config.read(config_filepath)
 
     flags = tf.app.flags

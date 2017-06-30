@@ -1,8 +1,10 @@
-from os.path import join
-from corpus import Corpus
 import argparse
+from os.path import join, abspath, curdir
+from os import makedirs
+from time import time
 
-from utils import build_vocabulary
+from corpus import Corpus
+from utils import build_vocabulary, write_flags
 from train import train_siamese, train_siamese_fromtf
 
 
@@ -51,7 +53,51 @@ def load_quora():
 
 def quoraTF_experiment(flags_path):
     tensors_path = '../tfrecords'
-    train_siamese_fromtf(tensors_path, flags_path)
+
+    embeddings = ['300']
+    filters = ['3,4,5', '3,5,7']
+    number_of_filters = ['50']
+    hashes = ['None']
+    margins = ['1.0', '1.2']
+    thresholds = ['1.5']
+    epochs = ['1']
+
+
+    hyperparams = {'Embeddings': None,
+                   'Filter sizes': None,
+                   'Number of filters': None,
+                   'Hash size': None,
+                   'Margin': None,
+                   'Threshold': None}
+    params = {'Number of epochs': None}
+
+    for e in embeddings:
+        hyperparams['Embeddings'] = e
+        for f in filters:
+            hyperparams['Filter sizes'] = f
+            for n in number_of_filters:
+                hyperparams['Number of filters'] = n
+                for h in hashes:
+                    hyperparams['Hash size'] = h
+                    for m in margins:
+                        hyperparams['Margin'] = m
+                        for t in thresholds:
+                            hyperparams['Threshold'] = t
+                            for ep in epochs:
+                                params['Number of epochs'] = ep
+
+                                # Save the params
+                                current_model = str(int(time()))
+                                out_dir = abspath(join('..', "models", current_model))
+                                makedirs(out_dir, exist_ok=True)
+                                flags_path = join(out_dir, 'config.flags')
+                                write_flags(hyperparams, params, flags_path)
+                                print('The model is saved in this path: {}'.format(out_dir))
+
+                                # TODO if there are no training phase, the timestamp doesn't change
+                                # # Train the model
+                                # train_siamese_fromtf(tensors_path, flags_path)
+                                #
 
 if __name__ == "__main__":
 
