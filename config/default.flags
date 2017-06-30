@@ -1,0 +1,17 @@
+[GPU]
+allow_soft_placement = True
+log_device_placement = False
+
+[Hyperparameters]
+Embeddings = 300
+Filter sizes = 3,4,5
+Number of filters = 50
+Hash size = None
+Margin = 1.5
+Threshold = 1.0
+
+[Training]
+Batch size = 100
+Number of epochs = 10
+Shuffle epochs = True
+
