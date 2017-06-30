@@ -51,8 +51,13 @@ def load_quora():
     return train_non_sim, train_sim, dev_non_sim, dev_sim, \
            test_non_sim, test_sim, vocab_processor, seq_len
 
-def quoraTF_experiment(flags_path):
+
+def quoraTF_default(flags_path):
     tensors_path = '../tfrecords'
+    train_siamese_fromtf(tensors_path, flags_path)
+
+
+def quoraTF_experiments(tensors_path):
 
     embeddings = ['300']
     filters = ['3,4,5', '3,5,7']
@@ -61,7 +66,6 @@ def quoraTF_experiment(flags_path):
     margins = ['1.0', '1.2']
     thresholds = ['1.5']
     epochs = ['1']
-
 
     hyperparams = {'Embeddings': None,
                    'Filter sizes': None,
@@ -94,20 +98,16 @@ def quoraTF_experiment(flags_path):
                                 write_flags(hyperparams, params, flags_path)
                                 print('The model is saved in this path: {}'.format(out_dir))
 
-                                # TODO if there are no training phase, the timestamp doesn't change
-                                # # Train the model
-                                # train_siamese_fromtf(tensors_path, flags_path)
-                                #
+                                # Train the model
+                                train_siamese_fromtf(tensors_path, flags_path)
+
 
 if __name__ == "__main__":
 
     flags_path = get_arguments()
-    quoraTF_experiment(flags_path)
-
-    # load_ibm()
-
-    # train_non_sim, train_sim, \
-    # dev_non_sim, dev_sim, \
-    # test_non_sim, test_sim, vocab_processor, seq_len = load_quora()
-    # train_siamese(train_non_sim, train_sim, dev_non_sim, dev_sim, vocab_processor, seq_len)
-
+    if flags_path:
+        quoraTF_default(flags_path)
+    else:
+        # TODO: Generate them
+        tensors_path = '../tfrecords'
+        quoraTF_experiments(tensors_path)
