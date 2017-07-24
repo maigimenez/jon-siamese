@@ -8,7 +8,7 @@ from os import makedirs
 
 
 def get_arguments():
-    parser = argparse.ArgumentParser(description='Create TF Records from Kaggle CSV')
+    parser = argparse.ArgumentParser(description='Create TF Records from Quora CSV')
     parser.add_argument('--data', metavar='d', type=str,
                         help='Path where the Quora dataset is.',
                         dest='dataset_path')
@@ -28,9 +28,15 @@ def get_arguments():
     args = parser.parse_args()
     return args.dataset_path, args.output_path, args.preprocess, args.one_hot
 
+
 def save_partitions(dataset_path, csv_path):
     dataset = Corpus('quora', dataset_path)
     dataset.make_partitions_quora(csv_path)
+
+
+def create_tfrecods(dataset_path, output_path, preprocess, one_hot):
+    dataset = Corpus('quora', dataset_path)
+    dataset.write_partitions_mixed(output_path, one_hot)
 
 if __name__ == "__main__":
     # TODO the pre-process is not applied

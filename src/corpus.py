@@ -40,7 +40,7 @@ class Corpus:
         if preprocess:
             q1 = preprocess_sentence(q1, preprocess)
             q2 = preprocess_sentence(q2, preprocess)
-        # This is a non-duplicate sentence -> non similar
+        # This is a non-duplicate sentence -> dissimilar
         if label == '0':
             self._non_sim_data.append(Data(qid, q1, q2, label, [0, 1]))
         # This is a duplicate sentence -> similar
