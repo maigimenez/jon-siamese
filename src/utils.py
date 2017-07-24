@@ -191,3 +191,46 @@ def write_tfrecord(writer, data, one_hot):
                 'sentence_2': tf.train.Feature(int64_list=tf.train.Int64List(value=data.sentence_2.astype("int64"))),
             }))
     writer.write(example.SerializeToString())
+
+
+def compute_euclidean_distance(x, y):
+    """
+    Computes the euclidean distance between two tensors
+    """
+    return tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(x, y)), 1))
+
+
+def contrastive_loss(labels, left_tensor, right_tensor, margin):
+    """
+    L(W)= (1-y)LS(d^2) + y*LD*{max(0, margin - d)}^2
+    similares cerquita, disimilares lejos -> stma busca equilibrio
+    LS: similares siempre junto d^2. Atracción. Distancia en el espacio reducido
+    LD: Repulsión.
+    margen penaliza sólo las que estén dentro de un radio.
+    pensar en el valor apropiado del margen.
+
+
+    Compute the contrastive loss as in
+        http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
+
+        L = 0.5 * (1-Y) * D^2 + 0.5 * (Y) * {max(0, margin - D)}^2
+
+    Return the loss operation
+    """
+
+    # TODO Cuidado que están al revés respecto al papel
+    y = tf.subtract(1.0, labels, name="1-yi")
+    not_y = tf.to_float(labels)
+
+    d = compute_euclidean_distance(left_tensor, right_tensor)
+    max_part = tf.square(tf.maximum(tf.subtract(margin, d), 0))
+
+    attraction_loss = tf.multiply(not_y, tf.square(d))
+    repulsion_loss = tf.multiply(y, max_part)
+    # TODO Change the weights between attraction and repulsion instead of 0.5*attraction + 0.5*loss
+    loss = tf.reduce_mean(attraction_loss + repulsion_loss, name="loss")
+
+    # loss = tf.reduce_mean(tf.add(attraction_loss, repulsion_loss),
+    #                       name="loss")
+
+    return loss, attraction_loss, repulsion_loss, d, max_part

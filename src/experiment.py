@@ -6,16 +6,19 @@ from time import time
 from corpus import Corpus
 from utils import build_vocabulary, write_flags
 from train import train_siamese, train_siamese_fromtf
-
+from test import test_model
+from convert_to_records import create_tfrecods
 
 def get_arguments():
     parser = argparse.ArgumentParser(description='Train a Siamese Architecture')
     parser.add_argument('--flags', metavar='f', type=str,
                         help='Path where the flags for training are',
                         dest='flags_path')
-
+    parser.add_argument('--data', metavar='d', type=str,
+                        help='Path where the Quora dataset is.',
+                        dest='dataset_path')
     args = parser.parse_args()
-    return args.flags_path
+    return args.flags_path, args.dataset_path
 
 
 def load_ibm():
@@ -53,19 +56,21 @@ def load_quora():
 
 
 def quoraTF_default(flags_path):
-    tensors_path = '../tfrecords'
-    train_siamese_fromtf(tensors_path, flags_path)
+    tensors_path = '../tfrecords/raw'
+    out_dir = train_siamese_fromtf(tensors_path, flags_path)
+    test_model(tensors_path, out_dir, flags_path)
 
 
 def quoraTF_experiments(tensors_path):
 
-    embeddings = ['300']
-    filters = ['3,4,5', '3,5,7']
-    number_of_filters = ['50']
+    embeddings = ['300', '50', '100', '400', '200']
+    filters = ['3,4,5', '1,2,3', '3,5,7', '3,7,9']
+    number_of_filters = ['50', '100', '200']
     hashes = ['None']
-    margins = ['1.0', '1.2']
-    thresholds = ['1.5']
-    epochs = ['1']
+    margins = ['1.0', '1.2', '1.5']
+    thresholds = ['1.5', '1.0', '1.7']
+    epochs = ['5', '10', '20']
+    preprocessing = ['None', '60', 'all']
 
     hyperparams = {'Embeddings': None,
                    'Filter sizes': None,
@@ -92,22 +97,27 @@ def quoraTF_experiments(tensors_path):
 
                                 # Save the params
                                 current_model = str(int(time()))
-                                out_dir = abspath(join('..', "models", current_model))
+                                out_dir = abspath(join("models", current_model))
                                 makedirs(out_dir, exist_ok=True)
                                 flags_path = join(out_dir, 'config.flags')
                                 write_flags(hyperparams, params, flags_path)
                                 print('The model is saved in this path: {}'.format(out_dir))
 
                                 # Train the model
-                                train_siamese_fromtf(tensors_path, flags_path)
+                                train_siamese_fromtf(tensors_path, flags_path, out_dir)
 
+                                # Test the model
+                                test_model(tensors_path, out_dir, flags_path)
 
 if __name__ == "__main__":
 
-    flags_path = get_arguments()
+    flags_path, dataset_path = get_arguments()
+
     if flags_path:
+        print(flags_path)
         quoraTF_default(flags_path)
     else:
         # TODO: Generate them
-        tensors_path = '../tfrecords'
+        tensors_path = '../tfrecords/raw'
+        # create_tfrecods(dataset_path, tensors_path, False, False)
         quoraTF_experiments(tensors_path)

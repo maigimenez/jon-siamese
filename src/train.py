@@ -74,8 +74,18 @@ def get_all_records(filepath,  num_labels, sequence_len):
 
         return dev_lab, dev_1, dev_2
 
-def train_siamese_fromtf(tf_path, config_flags, one_hot=False):
+
+def train_siamese_fromtf(tf_path, config_flags, out_dir=None, one_hot=False, verbose=False):
     """ Train a Siamese NN using a tfrecords as an input"""
+
+    tf.logging.set_verbosity(tf.logging.INFO)
+
+    # Create the directory where the training will be saved
+    if not out_dir:
+        timestamp = str(int(time()))
+        out_dir = abspath(join(curdir, "models", timestamp))
+        makedirs(out_dir, exist_ok=True)
+
     # Load the records
     train_path = join(tf_path, 'train.tfrecords')
     vocab_processor_path = join(tf_path, 'vocab.train')
@@ -86,13 +96,8 @@ def train_siamese_fromtf(tf_path, config_flags, one_hot=False):
     # Read the configuration flags
     FLAGS = read_flags(config_flags)
     # TODO Remove this from the siamese class
-    fully_layer = True if FLAGS.hash_size else False
     n_labels = 2 if one_hot else 1
     print('--------', n_labels)
-
-    # Load the dev records
-    dev_path = join(tf_path, 'dev.tfrecords')
-    # dev_labels, dev_s1, dev_s2 = get_all_records(dev_path, n_labels, seq_len)
 
     with tf.Graph().as_default():
 
@@ -101,31 +106,30 @@ def train_siamese_fromtf(tf_path, config_flags, one_hot=False):
                                                                            num_labels=n_labels,
                                                                            sequence_len=seq_len,
                                                                            num_epochs=FLAGS.num_epochs)
-        #
-        # dev_labels, dev_sentences_1, dev_sentences_2 = input_pipeline(filepath=dev_path,
-        #                                                               batch_size=FLAGS.batch_size,
-        #                                                               num_labels=n_labels,
-        #                                                               sequence_len=seq_len,
-        #                                                               num_epochs=FLAGS.num_epochs)
-        #
-        print('HASH TRAIN  ----->', FLAGS.hash_size)
         siamese = Siamese(sequence_length=seq_len,
                           vocab_size=len(vocab_processor.vocabulary_),
                           embedding_size=FLAGS.embedding_dim,
                           filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
                           num_filters=FLAGS.num_filters,
-                          margin=FLAGS.margin,
-                          threshold=FLAGS.threshold,
-                          
-                          fully=fully_layer,
-                          hash_size=FLAGS.hash_size)
+                          margin=FLAGS.margin)
 
         global_step = tf.Variable(0, trainable=False)
-        starter_learning_rate = 0.1
-        learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
-                                                   100000, 0.96, staircase=True)
-        train_op = tf.train.MomentumOptimizer(0.0001, 0.95, use_nesterov=True).minimize(siamese.loss,
-                                                                                        global_step=global_step)
+
+        # learning_rate = tf.placeholder(tf.float32, shape=[])
+        # train_op = tf.train.GradientDescentOptimizer(
+        #     learning_rate=learning_rate).minimize(siamese.loss)
+
+        # optimizer = tf.train.AdamOptimizer(0.2)
+        # grads_and_vars = optimizer.compute_gradients(siamese.loss)
+        # train_op = optimizer.apply_gradients(grads_and_vars, global_step=global_step)
+
+        # starter_learning_rate = 0.1
+        # learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
+        #                                            100000, 0.96, staircase=True)
+
+        train_op = tf.train.MomentumOptimizer(0.01, 0.5, use_nesterov=True)
+        train_op = train_op.minimize(siamese.loss, global_step=global_step)
+
         init_op = tf.global_variables_initializer()
         init_again = tf.local_variables_initializer()
 
@@ -135,93 +139,78 @@ def train_siamese_fromtf(tf_path, config_flags, one_hot=False):
 
         sess = tf.Session(config=session_conf)
         with sess.as_default() as sess:
+            if verbose:
+                tf.summary.histogram('embedding', siamese.W_embedding)
+                tf.summary.histogram('tensor_left', siamese.left_siamese)
+                # tf.summary.histogram('tensor_left_z', tf.nn.zero_fraction(siamese.left_siamese))
+                tf.summary.histogram('tensor_right', siamese.right_siamese)
+                # tf.summary.histogram('tensor_right_z', tf.nn.zero_fraction(siamese.right_siamese))
+                tf.summary.histogram('distance', siamese.distance)
+
+                tf.summary.scalar('loss', siamese.loss)
+                tf.summary.scalar('distance', siamese.distance[0])
+                tf.summary.scalar('attraction', siamese.attr[0][0])
+                tf.summary.scalar('repulsion', siamese.rep[0][0])
+
+                summary_op = tf.summary.merge_all()
+                summary_writer = tf.summary.FileWriter('./train', sess.graph)
+
             sess.run(init_op)
             sess.run(init_again)
 
-            # TODO la funcion map no la detecta y por lo tanto NO VA NADA
-            # training_dataset = tf.contrib.data.TFRecordDataset([train_path])
-            # # training_dataset = training_dataset.map(lambda x: parse_function(x, n_labels, seq_len))
-            # training_dataset = training_dataset.map(lambda x: x)
-            #
-            # # training_dataset = training_dataset.shuffle(buffer_size=10000)
-            # # training_dataset = training_dataset.repeat().batch(100)
-            #
-            # validation_dataset = tf.contrib.data.TFRecordDataset([train_path])
-            # # training_dataset = tf.contrib.data.TFRecordDataset([train_path]).map(lambda x: )
-            # # validation_dataset = tf.contrib.data.TFRecordDataset([train_path]).map(
-            # #     lambda x: parse_function(x, n_labels, seq_len))
-            # iterator = tf.contrib.data.Iterator.from_structure(training_dataset.output_types,
-            #                                                    training_dataset.output_shapes)
-            # next_element = iterator.get_next()
-            #
-            # training_init_op = iterator.make_initializer(training_dataset)
-            # validation_init_op = iterator.make_initializer(training_dataset)
-            #
-            # # Run 20 epochs in which the training dataset is traversed, followed by the
-            # # validation dataset.
-            # for _ in range(1):
-            #     # Initialize an iterator over the training dataset.
-            #     sess.run(training_init_op)
-            #     for _ in range(1):
-            #         a = sess.run(next_element)
-            #         # parse_function(a, n_labels, seq_len)
-            #         print(a)
-            #     #
-            #     # # Initialize an iterator over the validation dataset.
-            #     # sess.run(validation_init_op)
-            #     # for _ in range(1):
-            #     #     sess.run(next_element)
-
-
+            # Show which variables are going to be train
+            variables_names = [v.name for v in tf.trainable_variables()]
+            values = sess.run(variables_names)
+            for k, v in zip(variables_names, values):
+                print("Variable: ", k, "- Shape: ", v.shape)
 
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(coord=coord, sess=sess)
-            step = 0
             try:
                 while not coord.should_stop():
                     # print('--------------------------------------------------------------')
-                    label, s1, s2 = sess.run([label_batch, sentences_1_batch, sentences_2_batch])
-                    step += 1
-                    print(step, label.shape, step%1000)
-                    # print(sess.run(sentences_1_batch).shape, sess.run(sentences_2_batch).shape,
-                    #       sess.run(label_batch).shape)
-
-                    _, loss, attraction, repulsion, dis, acc = \
-                        sess.run([train_op, siamese.loss, siamese.attraction_loss,
-                                  siamese.repulsion_loss, siamese.distance,
-                                  siamese.accuracy],
-                                 feed_dict={
-                                     siamese.left_input: s1,
-                                     siamese.right_input: s2,
-                                     siamese.label: label,
+                    labels, s1, s2 = sess.run([label_batch, sentences_1_batch, sentences_2_batch])
+                    current_step = tf.train.global_step(sess, global_step)
+                    if verbose:
+                        _, summaries, loss, attraction, repulsion, distance, l, r, W, mp, le, re = \
+                            sess.run([train_op, summary_op,
+                                      siamese.loss, siamese.attr,
+                                      siamese.rep, siamese.distance,
+                                      siamese.left_siamese, siamese.right_siamese,
+                                      siamese.W_embedding,
+                                      siamese.left_embedded, siamese.right_embedded],
+                                     feed_dict={
+                                         siamese.left_input: s1,
+                                         siamese.right_input: s2,
+                                         siamese.labels: labels,
+                                         # learning_rate: 0.01
+                                         siamese.is_training: True
                                      })
-                    log_str = "(#{0: <5} - {6}) - Loss: {1:.4f} - " \
-                              "(a: {2:.3f} - r: {3:.3f} - " \
-                              "d: {4:.4f}, accuracy:{5:.4f})"
-                    print(log_str.format(sess.run(global_step), loss,
-                                         np.mean(attraction),
-                                         np.mean(repulsion),
-                                         np.mean(dis), acc,
-                                         np.mean(sess.run(label_batch))))
+                        summary_writer.add_summary(summaries, global_step=current_step)
 
-                    # TODO Dev
-                    # if not step % 10:
-                    #     print('--------------------------------------------------------------')
-                    #     coord_dev = tf.train.Coordinator()
-                    #     threads = tf.train.start_queue_runners(coord=coord_dev, sess=sess)
-                    #     devstep = 0
-                    #     try:
-                    #         while not coord_dev.should_stop():
-                    #             label, s1, s2 = sess.run([dev_labels, dev_sentences_1, dev_sentences_2])
-                    #             devstep += 1
-                    #             print(devstep, label.shape)
-                    #     except tf.errors.OutOfRangeError:
-                    #         print("Done dev!")
-                    #     finally:
-                    #         coord.request_stop()
-                    #
-                    #     coord.join(threads)
+                    else:
+                        _, loss, attraction, repulsion, distance = \
+                            sess.run([train_op,
+                                      siamese.loss, siamese.attr,
+                                      siamese.rep, siamese.distance],
+                                     feed_dict={
+                                         siamese.left_input: s1,
+                                         siamese.right_input: s2,
+                                         siamese.labels: labels,
+                                         # learning_rate: 0.01
+                                         siamese.is_training: True
+                                     })
 
+                        with open(join(out_dir, 'train.log'), 'a') as log_file:
+                            log_str = "(#{0: <5} - {1}) - Loss: {2:.4f} - " \
+                                      "(a: {3:.3f} - r: {4:.3f} - " \
+                                      "d: {5:.4f}) \n"
+                            log_file.write(log_str.format(current_step,
+                                                          np.mean(labels),
+                                                          loss,
+                                                          np.mean(attraction),
+                                                          np.mean(repulsion),
+                                                          np.mean(distance)))
 
             except tf.errors.OutOfRangeError:
                 print("Done training!")
@@ -231,9 +220,10 @@ def train_siamese_fromtf(tf_path, config_flags, one_hot=False):
             coord.join(threads)
 
             # Save the model
-            timestamp = str(int(time()))
-            out_dir = abspath(join(curdir, "models", timestamp))
-            makedirs(out_dir, exist_ok=True)
+            if not out_dir:
+                timestamp = str(int(time()))
+                out_dir = abspath(join(curdir, "models", timestamp))
+                makedirs(out_dir, exist_ok=True)
 
             with open(join(out_dir, 'parameters.txt'), 'w') as param_file:
                 param_file.write("Default parameters: \n")
@@ -242,7 +232,35 @@ def train_siamese_fromtf(tf_path, config_flags, one_hot=False):
 
             save_path = saver.save(sess, join(out_dir, "model.ckpt"))
             print("Model saved in file: {}".format(save_path))
+            return out_dir
 
+
+def train_strep(sess, train_op, siamese, s1, s2, labels, learning_rate,
+                learn_rate, out_dir, current_step):
+    _, loss, attraction, repulsion, distance, accuracy = \
+        sess.run([train_op,
+                  siamese.loss, siamese.attr,
+                  siamese.rep, siamese.distance,
+                  siamese.accuracy],
+                 feed_dict={
+                     siamese.left_input: s1,
+                     siamese.right_input: s2,
+                     siamese.labels: labels,
+                     learning_rate: learn_rate,
+                     siamese.is_training: True
+                 })
+
+    with open(join(out_dir, 'train.log'), 'a') as log_file:
+        log_str = "(#{0: <5} - {1}) - Loss: {2:.4f} - " \
+                  "(a: {3:.3f} - r: {4:.3f} - " \
+                  "d: {5:.4f}, accuracy:{6:.3f}) \n"
+        log_file.write(log_str.format(current_step,
+                                      np.mean(labels),
+                                      loss,
+                                      np.mean(attraction),
+                                      np.mean(repulsion),
+                                      np.mean(distance),
+                                      accuracy))
 
 
 def dev_step(sess, siamese, val_left_sentences, val_right_sentences, val_sim_labels, epoch):
