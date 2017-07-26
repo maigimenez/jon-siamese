@@ -235,6 +235,24 @@ def train_siamese_fromtf(tf_path, config_flags, out_dir=None, one_hot=False, ver
             return out_dir
 
 
+def train_step_verbose(sess, train_op, summary_op, summary_writer,
+                       siamese, s1, s2, labels, current_step):
+    _, summaries, loss, attraction, repulsion, distance, l, r, W, mp, le, re = \
+        sess.run([train_op, summary_op,
+                  siamese.loss, siamese.attr,
+                  siamese.rep, siamese.distance,
+                  siamese.left_siamese, siamese.right_siamese,
+                  siamese.W_embedding,
+                  siamese.left_embedded, siamese.right_embedded],
+                 feed_dict={
+                     siamese.left_input: s1,
+                     siamese.right_input: s2,
+                     siamese.labels: labels,
+                     # learning_rate: 0.01
+                     siamese.is_training: True
+                 })
+    summary_writer.add_summary(summaries, global_step=current_step)
+
 def train_strep(sess, train_op, siamese, s1, s2, labels, learning_rate,
                 learn_rate, out_dir, current_step):
     _, loss, attraction, repulsion, distance, accuracy = \
