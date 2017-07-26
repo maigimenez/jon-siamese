@@ -1,8 +1,7 @@
 import tensorflow as tf
-import numpy as np
 import pickle
-from time import time
 from os.path import join, abspath, curdir
+import matplotlib.pyplot as plt
 
 import argparse
 from utils import read_flags
@@ -151,7 +150,44 @@ def test_model(tf_path, model_path, flags_path):
 
             print("Results saved in: {}".format(join(model_path, 'results.txt')))
 
+def best_score(threshold, dissimilar, similar):
+    hits = sum([1 for s in dissimilar if s > threshold]) + sum([1 for s in similar if s <= threshold])
+    return hits/(len(similar)+len(dissimilar))
+
+def plot_distances(model_path):
+    similar, dissimilar = [], []
+    with open(join(model_path, 'distances.log')) as dist_file:
+        for line in dist_file:
+            dist, tag = line.strip().split('\t')
+            if tag == '1':
+                similar.append(float(dist))
+            else:
+                dissimilar.append(float(dist))
+
+    plt.hist(similar, color='r', alpha=0.5, label='Similar')
+    plt.hist(dissimilar, color='b', alpha=0.5, label='Dissimilar')
+    plt.title("Siamese distances in test")
+    plt.xlabel("Distances")
+    plt.ylabel("Frequency")
+    plt.legend()
+    plt.savefig(join(model_path, 'test.pdf'))
+
+    scores = {}
+    for i in range(min(similar), max(dissimilar)):
+        scores[i] = best_score(i, dissimilar, similar)
+
+    best_accuracy, best_threshold = -1, -1
+    for k,v in scores.items():
+        if v > best_threshold:
+            best_accuracy = v
+            best_threshold = k
+
+    with open(join(model_path, 'results.txt'), 'a') as results_file:
+        log_str = "The best accuracy is {} with threshold {}"
+        results_file.write(log_str.format(best_accuracy, best_threshold))
+
 
 if __name__ == "__main__":
     tf_path, model_path, flags_path = get_arguments()
     test_model(tf_path, model_path, flags_path)
+    plot_distances(model_path)
