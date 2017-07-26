@@ -173,18 +173,21 @@ def plot_distances(model_path):
     plt.savefig(join(model_path, 'test.pdf'))
 
     scores = {}
-    for i in range(min(similar), max(dissimilar)):
-        scores[i] = best_score(i, dissimilar, similar)
+    for i in range(int(min(similar)), int(max(dissimilar))):
+        for j in range(10):
+            decimal = j/10
+            scores[i+decimal] = best_score(i+decimal, dissimilar, similar)
 
-    best_accuracy, best_threshold = -1, -1
-    for k,v in scores.items():
-        if v > best_threshold:
+    best_accuracy, best_threshold = -1, None
+    for k, v in scores.items():
+        if v > best_accuracy:
             best_accuracy = v
             best_threshold = k
+    worst_accuracy = min(scores.values())
 
     with open(join(model_path, 'results.txt'), 'a') as results_file:
-        log_str = "The best accuracy is {} with threshold {}"
-        results_file.write(log_str.format(best_accuracy, best_threshold))
+        log_str = "\nThe best accuracy is {} with threshold {}. And the worst {}"
+        results_file.write(log_str.format(best_accuracy, best_threshold, worst_accuracy))
 
 
 if __name__ == "__main__":
