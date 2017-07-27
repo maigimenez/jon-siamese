@@ -1,10 +1,5 @@
-import tensorflow as tf
 from corpus import Corpus
-from utils import build_vocabulary
-import pickle
 import argparse
-from os.path import join, isdir
-from os import makedirs
 
 
 def get_arguments():
@@ -17,8 +12,9 @@ def get_arguments():
                         help='Path where the tf records will be saved.',
                         dest='output_path')
 
-    parser.add_argument('-p', action='store_true', default=False,
-                        help='Apply a pre-processing phase',
+    parser.add_argument('-p', type=str,
+                        help='Apply a pre-processing phase (All, No, '
+                             'Max. length of sentences to be processed)',
                         dest='preprocess')
 
     parser.add_argument('-o', action='store_true', default=False,
@@ -34,14 +30,26 @@ def save_partitions(dataset_path, csv_path):
     dataset.make_partitions_quora(csv_path)
 
 
-def create_tfrecods(dataset_path, output_path, preprocess, one_hot):
-    dataset = Corpus('quora', dataset_path)
+def create_tfrecods(dataset_path, output_path, preprocess, max_len, one_hot):
+    dataset = Corpus('quora', dataset_path, preprocess, max_len)
     dataset.write_partitions_mixed(output_path, one_hot)
+
 
 if __name__ == "__main__":
     # TODO the pre-process is not applied
-    dataset_path, output_path, preprocess, one_hot = get_arguments()
+    dataset_path, output_path, preprocess_flag, one_hot = get_arguments()
+    max_len = None
+    if preprocess_flag.lower() == 'no':
+        preprocess = False
+    else:
+        preprocess = True
+        if preprocess_flag.lower() == 'all':
+            max_len = -1
+        else:
+            max_len = int(preprocess_flag)
+
     # Create and save the partitions
-    dataset = Corpus('quora', dataset_path)
-    print(len(dataset.sim_data), len(dataset.non_sim_data))
+    dataset = Corpus('quora', dataset_path, preprocess, max_len)
+    print('Read {} similarity sencenteces and {} disimilar.'.format(
+        len(dataset.sim_data), len(dataset.non_sim_data)))
     dataset.write_partitions_mixed(output_path, one_hot)

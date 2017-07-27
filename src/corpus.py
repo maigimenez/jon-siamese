@@ -11,7 +11,7 @@ import csv
 import pickle
 
 class Corpus:
-    def __init__(self, corpus_name, path, preprocess=None):
+    def __init__(self, corpus_name, path, preprocess=None, max_len=None):
         """ Load the data set in a class
 
         Arguments:
@@ -25,7 +25,7 @@ class Corpus:
         if corpus_name == 'ibm':
             self.load_ibm(path, preprocess)
         if corpus_name == 'quora':
-            self.load_quora(path, preprocess)
+            self.load_quora(path, preprocess, max_len)
 
     @property
     def sim_data(self):
@@ -36,10 +36,10 @@ class Corpus:
         return self._non_sim_data
 
 
-    def save_data(self, preprocess, qid, q1, q2, label):
+    def save_data(self, preprocess, max_len, qid, q1, q2, label):
         if preprocess:
-            q1 = preprocess_sentence(q1, preprocess)
-            q2 = preprocess_sentence(q2, preprocess)
+            q1 = preprocess_sentence(q1, max_len)
+            q2 = preprocess_sentence(q2, max_len)
         # This is a non-duplicate sentence -> dissimilar
         if label == '0':
             self._non_sim_data.append(Data(qid, q1, q2, label, [0, 1]))
@@ -54,7 +54,7 @@ class Corpus:
                 label, q1, q2, qid = line.strip().split('\t')
                 self.save_data(preprocess, qid, q1, q2, label)
 
-    def load_quora(self, path, preprocess):
+    def load_quora(self, path, preprocess, max_len):
         with open(path) as dataset_file:
             next(dataset_file)
             aux_line = ''
@@ -63,7 +63,7 @@ class Corpus:
                 # If some field is missing do not consider this entry.
                 if len(line_strip) == 6:
                     qid, _, _, q1, q2, label = line.strip().split('\t')
-                    self.save_data(preprocess, qid, q1, q2, label)
+                    self.save_data(preprocess, max_len, qid, q1, q2, label)
 
                 else:
                     aux_line += line
@@ -71,7 +71,7 @@ class Corpus:
                     if len(strip_aux) == 6:
                         qid, _, _, q1, q2, label = aux_line.strip().split('\t')
                         aux_line = ''
-                        self.save_data(preprocess, qid, q1, q2, label)
+                        self.save_data(preprocess, max_len, qid, q1, q2, label)
 
     def shuffle(self):
         shuffle(self._sim_data)
