@@ -2,6 +2,7 @@ import tensorflow as tf
 import pickle
 from os.path import join, abspath, curdir
 import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 
 import argparse
 from utils import read_flags
@@ -149,10 +150,13 @@ def test_model(tf_path, model_path, flags_path):
                 results_file.write("Accuracy: {} ({}/{})".format(hits / test_sample, hits, test_sample))
 
             print("Results saved in: {}".format(join(model_path, 'results.txt')))
+            plot_distances(model_path)
 
+            
 def best_score(threshold, dissimilar, similar):
     hits = sum([1 for s in dissimilar if s > threshold]) + sum([1 for s in similar if s <= threshold])
     return hits/(len(similar)+len(dissimilar))
+
 
 def plot_distances(model_path):
     similar, dissimilar = [], []
