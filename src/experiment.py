@@ -17,8 +17,11 @@ def get_arguments():
     parser.add_argument('--data', metavar='d', type=str,
                         help='Path where the Quora dataset is.',
                         dest='dataset_path')
+    parser.add_argument('--tf', metavar='f', type=str,
+                        help='Path where tfrecords are located',
+                        dest='tf_path')
     args = parser.parse_args()
-    return args.flags_path, args.dataset_path
+    return args.flags_path, args.dataset_path, args.tf_path
 
 
 def load_ibm():
@@ -55,22 +58,20 @@ def load_quora():
            test_non_sim, test_sim, vocab_processor, seq_len
 
 
-def quoraTF_default(flags_path):
-    tensors_path = '../tfrecords/raw'
-    out_dir = train_siamese_fromtf(tensors_path, flags_path)
-    test_model(tensors_path, out_dir, flags_path)
+def quoraTF_default(flags_path, tf_path):
+    out_dir = train_siamese_fromtf(tf_path, flags_path)
+    test_model(tf_path, out_dir, flags_path)
 
 
 def quoraTF_experiments(tensors_path):
 
-    embeddings = ['300', '50', '100', '400', '200']
+    embeddings = ['300', '50', '100']
     filters = ['3,4,5', '1,2,3', '3,5,7', '3,7,9']
     number_of_filters = ['50', '100', '200']
     hashes = ['None']
-    margins = ['1.0', '1.2', '1.5']
-    thresholds = ['1.5', '1.0', '1.7']
+    margins = ['15', '20', '30']
+    thresholds = ['1.5']
     epochs = ['5', '10', '20']
-    preprocessing = ['None', '60', 'all']
 
     hyperparams = {'Embeddings': None,
                    'Filter sizes': None,
@@ -111,13 +112,11 @@ def quoraTF_experiments(tensors_path):
 
 if __name__ == "__main__":
 
-    flags_path, dataset_path = get_arguments()
+    flags_path, dataset_path, tf_path = get_arguments()
 
     if flags_path:
-        print(flags_path)
-        quoraTF_default(flags_path)
+        quoraTF_default(flags_path, tf_path)
     else:
         # TODO: Generate them
-        tensors_path = '../tfrecords/raw'
         # create_tfrecods(dataset_path, tensors_path, False, False)
-        quoraTF_experiments(tensors_path)
+        quoraTF_experiments(tf_path)
