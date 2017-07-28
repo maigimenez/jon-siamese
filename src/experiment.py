@@ -4,9 +4,10 @@ from os import makedirs
 from time import time
 
 from corpus import Corpus
-from utils import build_vocabulary, write_flags
-from train import train_siamese, train_siamese_fromtf
+from utils import build_vocabulary, write_flags, read_flags
+from train import train_siamese_fromtf
 from test import test_model
+from validation import dev_step
 from convert_to_records import create_tfrecods
 
 def get_arguments():
@@ -58,8 +59,18 @@ def load_quora():
            test_non_sim, test_sim, vocab_processor, seq_len
 
 
-def quoraTF_default(flags_path, tf_path):
-    out_dir = train_siamese_fromtf(tf_path, flags_path)
+def quoraTF_default(flags_path, tf_path, out_dir=None):
+    flags = read_flags(flags_path)
+    num_epochs = flags.num_epochs
+    evaluate_epochs = flags.evaluate_epochs
+    for i in range(0, num_epochs, evaluate_epochs):
+        # Train n epochs and then evaluate the system
+        if not out_dir:
+            out_dir = train_siamese_fromtf(tf_path, flags, evaluate_epochs)
+        else:
+            train_siamese_fromtf(tf_path, flags, evaluate_epochs, out_dir)
+
+        dev_step(tf_path, out_dir, flags_path, i)
     test_model(tf_path, out_dir, flags_path)
 
 
@@ -104,11 +115,13 @@ def quoraTF_experiments(tensors_path):
                                 write_flags(hyperparams, params, flags_path)
                                 print('The model is saved in this path: {}'.format(out_dir))
 
-                                # Train the model
-                                train_siamese_fromtf(tensors_path, flags_path, out_dir)
+                                quoraTF_default(flags_path, tensors_path, out_dir)
 
-                                # Test the model
-                                test_model(tensors_path, out_dir, flags_path)
+                                # # Train the model
+                                # train_siamese_fromtf(tensors_path, flags_path, out_dir)
+                                #
+                                # # Test the model
+                                # test_model(tensors_path, out_dir, flags_path)
 
 if __name__ == "__main__":
 

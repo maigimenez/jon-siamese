@@ -4,7 +4,50 @@ from tensorflow.contrib import learn
 import configparser
 import tensorflow as tf
 import numpy as np
-from os.path import join
+import pickle
+
+
+def best_score(threshold, dissimilar, similar):
+    """ Returns the accuracy achieved  using a determined threshold"""
+    hits = sum([1 for s in dissimilar if s > threshold]) + sum([1 for s in similar if s <= threshold])
+    return hits/(len(similar)+len(dissimilar))
+
+
+def read_sample(filename_queue, num_labels, sequence_len):
+    reader = tf.TFRecordReader()
+    _, serialized_sample = reader.read(filename_queue)
+    features = tf.parse_single_example(
+        serialized_sample,
+        features={
+            'label': tf.FixedLenFeature([num_labels], tf.int64),
+            'sentence_1': tf.FixedLenFeature([sequence_len], tf.int64),
+            'sentence_2': tf.FixedLenFeature([sequence_len], tf.int64)
+        })
+    return features['label'], features['sentence_1'], features['sentence_2']
+
+
+def input_pipeline_test(filepath, batch_size, num_labels, sequence_len,
+                        num_epochs=None):
+    """ Creates batches of data in a queue and returns a batch of ids and sentences """
+    with tf.name_scope('input'):
+        filename_queue = tf.train.string_input_producer([filepath], num_epochs=num_epochs)
+        label, sentence_1, sentence_2 = read_sample(filename_queue, num_labels, sequence_len)
+        labels, sentences_1_batch, sentences_2_batch = tf.train.shuffle_batch([label, sentence_1,
+                                                                               sentence_2],
+                                                                              batch_size=batch_size,
+                                                                              num_threads=1,
+                                                                              capacity=1000 + 3 * batch_size,
+                                                                              min_after_dequeue=100)
+    return labels, sentences_1_batch, sentences_2_batch
+
+def load_binarize_data(path):
+    """ Given a file load its binarized data.
+    Arguments:
+        :param path: path where the pickle file is located.
+    """
+    with open(path, 'rb') as f:
+        return pickle.load(f)
+
 
 def preprocess_sentence(sentence, max_len=60):
     """ Pre-process a sentence: remove stop words and lowercase the sentence
@@ -60,6 +103,7 @@ def write_flags(hyperparams, params, flags_path):
 
         config['Training'][key] = value
     config['Training']['Batch size'] = '100'
+    config['Training']['Evaluate every n epochs'] = '5'
     config['Training']['Shuffle epochs'] = 'True'
     with open(flags_path, 'w') as configfile:
         config.write(configfile)
@@ -101,6 +145,7 @@ def read_flags(config_filepath=None):
     # Training parameters
     FLAGS.batch_size = int(config['Training']['Batch size'])
     FLAGS.num_epochs = int(config['Training']['Number of epochs'])
+    FLAGS.evaluate_epochs = int(config['Training']['Evaluate every n epochs'])
     if config['Training']['Shuffle epochs'] == 'True':
         FLAGS.shuffle_epochs = True
     else:
