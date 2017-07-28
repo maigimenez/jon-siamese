@@ -8,11 +8,7 @@ from siamese import Siamese
 def dev_step(tf_path, model_path, flags_path, current_step):
 
     # Import the parameters binarized
-<<<<<<< HEAD
     test_tfrecors = join(tf_path, 'dev.tfrecords')
-=======
-    test_tfrecors = join(tf_path, 'test.tfrecords')
->>>>>>> f0d45aaf2f49a673e0ca6502a2c6da2696e13740
     vocab_processor_path = join(tf_path, 'vocab.train')
     vocab_processor = load_binarize_data(vocab_processor_path)
     sequence_length_path = join(tf_path, 'sequence.len')
