@@ -84,13 +84,10 @@ class Corpus:
 
     def write_partitions_mixed(self, partitions_path, one_hot=False):
         """ Create the partitions and write them in csv """
-        # Shuffle the dataset
-        # This was commented because the pipeline handles the shuffle.
-        # self.shuffle()
 
         # Create and save the vocabularies
         vocab_non_sim = self._non_sim_data[:231027]
-        vocab_sim = self._non_sim_data[:133263]
+        vocab_sim = self._sim_data[:133263]
         vocab_processor, sequence_length = build_vocabulary(vocab_sim,
                                                             vocab_non_sim)
         if not isdir(partitions_path):
@@ -166,7 +163,7 @@ class Corpus:
     def make_partitions_quora(self):
         self.shuffle()
         vocab_non_sim = self._non_sim_data[:231027]
-        vocab_sim = self._non_sim_data[:133263]
+        vocab_sim = self._sim_data[:133263]
         vocab_processor, sequence_length = build_vocabulary(vocab_sim,
                                                             vocab_non_sim)
         train_non_sim = [self.to_index_data(data, vocab_processor)
