@@ -1,30 +1,11 @@
 import tensorflow as tf
-from os.path import join, abspath, curdir
-import matplotlib.pyplot as plt
-plt.switch_backend('agg')
+from os.path import join
 
-import argparse
 from utils import read_flags, load_binarize_data, input_pipeline_test, best_score
 from siamese import Siamese
 
-def get_arguments():
-    parser = argparse.ArgumentParser(description='Test a Siamese Architecture')
-    parser.add_argument('--tf', metavar='r', type=str,
-                        help='Path where the tfrecords are',
-                        dest='tf_path')
-    parser.add_argument('--model', metavar='m', type=str,
-                        help='Path where the trained model is',
-                        dest='model_path')
-    parser.add_argument('--flags', metavar='f', type=str,
-                        help='Path where the flags for training are',
-                        dest='flags_path')
 
-    args = parser.parse_args()
-    return args.tf_path, args.model_path, args.flags_path
-
-
-
-def test_model(tf_path, model_path, flags_path):
+def dev_step(tf_path, model_path, flags_path, current_step):
 
     # Import the parameters binarized
     test_tfrecors = join(tf_path, 'test.tfrecords')
@@ -39,6 +20,8 @@ def test_model(tf_path, model_path, flags_path):
     one_hot = False
     n_labels = 2 if one_hot else 1
 
+    distances_filename = join(model_path, 'dev_' + str(current_step) + '_distances.log')
+    log_filename = join(model_path, 'dev_' + str(current_step) + '.log')
 
     # TEST THE SYSTEM
     with tf.Graph().as_default():
@@ -79,11 +62,9 @@ def test_model(tf_path, model_path, flags_path):
             try:
                 while not coord.should_stop():
                     test_1, test_2, test_label = sess.run([test_1_batch, test_2_batch, label_batch])
-                    # TEST CLASSIFICATION
-                    loss, attraction, repulsion, dis, acc = \
+                    loss, attraction, repulsion, dis = \
                         sess.run([siamese.loss, siamese.attr,
-                                  siamese.rep, siamese.distance,
-                                  siamese.accuracy],
+                                  siamese.rep, siamese.distance],
                                  feed_dict={
                                      siamese.left_input: test_1,
                                      siamese.right_input: test_2,
@@ -91,38 +72,38 @@ def test_model(tf_path, model_path, flags_path):
                                      siamese.is_training: False
                                  })
 
-                    with open(join(model_path, 'test.log'), 'a') as log_file:
-                        log_str = "(#{0: <5} - {6}) - Loss: {1:.4f} - " \
+                    with open(log_filename, 'a') as log_file:
+                        log_str = "(#{0: <5} - {5}) - Loss: {1:.4f} - " \
                                   "(a: {2:.3f} - r: {3:.3f} - " \
-                                  "d: {4:.4f}, accuracy:{5:.4f})\n"
+                                  "d: {4:.4f})\n"
                         log_file.write(log_str.format(test_sample, loss,
                                                       attraction[0][0],
                                                       repulsion[0][0],
-                                                      dis[0], acc,
+                                                      dis[0],
                                                       test_label[0][0], ))
 
-                    with open(join(model_path, 'distances.log'), 'a') as dist_file:
+                    with open(distances_filename, 'a') as dist_file:
                         log_str = "{}\t{}\n"
-                        dist_file.write(log_str.format(dis[0], test_label[0][0]))
+                        dist_file.write(log_str.format(dis[0],
+                                                       test_label[0][0]))
                     test_sample += 1
-                    if acc == 1:
-                        hits += 1
+
             except tf.errors.OutOfRangeError:
-                print("Done testing!")
+                print("Done evaluating!")
             finally:
                 coord.request_stop()
 
             coord.join(threads)
             sess.close()
 
-            with open(join(model_path, 'results.txt'), 'w') as results_file:
+            with open(join(model_path, 'dev.txt'), 'a') as results_file:
                 results_file.write("Accuracy: {} ({}/{})".format(hits / test_sample, hits, test_sample))
 
-            print("Results saved in: {}".format(join(model_path, 'results.txt')))
-            plot_distances(model_path)
+            print("Results saved in: {}".format(join(model_path, 'dev.txt')))
+            find_threshold(model_path)
 
 
-def plot_distances(model_path):
+def find_threshold(model_path):
     similar, dissimilar = [], []
     with open(join(model_path, 'distances.log')) as dist_file:
         for line in dist_file:
@@ -131,14 +112,6 @@ def plot_distances(model_path):
                 similar.append(float(dist))
             else:
                 dissimilar.append(float(dist))
-
-    plt.hist(similar, color='r', alpha=0.5, label='Similar')
-    plt.hist(dissimilar, color='b', alpha=0.5, label='Dissimilar')
-    plt.title("Siamese distances in test")
-    plt.xlabel("Distances")
-    plt.ylabel("Frequency")
-    plt.legend()
-    plt.savefig(join(model_path, 'test.pdf'))
 
     scores = {}
     for i in range(int(min(similar)), int(max(dissimilar))):
@@ -153,12 +126,6 @@ def plot_distances(model_path):
             best_threshold = k
     worst_accuracy = min(scores.values())
 
-    with open(join(model_path, 'results.txt'), 'a') as results_file:
+    with open(join(model_path, 'dev.txt'), 'a') as results_file:
         log_str = "\nThe best accuracy is {} with threshold {}. And the worst {}"
         results_file.write(log_str.format(best_accuracy, best_threshold, worst_accuracy))
-
-
-if __name__ == "__main__":
-    tf_path, model_path, flags_path = get_arguments()
-    test_model(tf_path, model_path, flags_path)
-    plot_distances(model_path)
