@@ -100,12 +100,12 @@ def dev_step(tf_path, model_path, flags_path, current_step):
                 results_file.write("Accuracy: {} ({}/{})".format(hits / test_sample, hits, test_sample))
 
             print("Results saved in: {}".format(join(model_path, 'dev.txt')))
-            find_threshold(model_path)
+            find_threshold(model_path, distances_filename)
 
 
-def find_threshold(model_path):
+def find_threshold(model_path, distances_filename):
     similar, dissimilar = [], []
-    with open(join(model_path, 'distances.log')) as dist_file:
+    with open(join(model_path, distances_filename)) as dist_file:
         for line in dist_file:
             dist, tag = line.strip().split('\t')
             if tag == '1':
