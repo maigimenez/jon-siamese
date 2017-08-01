@@ -1,13 +1,11 @@
-import pandas as pd
 import tensorflow as tf
 from utils import preprocess_sentence
 from data import Data
-from random import shuffle
+from random import shuffle, randrange
 import numpy as np
 from utils import build_vocabulary, write_tfrecord
 from os.path import join, isdir
 from os import makedirs
-import csv
 import pickle
 
 class Corpus:
@@ -82,19 +80,126 @@ class Corpus:
         data.sentence_2 = np.array(list(vocab_processor.transform([data.sentence_2])))[0]
         return data
 
+    def create_vocabularies(self,  num_sim_sentences, num_nonsim_sentences,
+                            partitions_path=None):
+        """ Create and save the vocabularies
+
+        :param partitions_path: path where the binarized files should be saved
+            if this is not present the vocabularies won't be saved.
+        :return: the vocabulary processor.
+
+        """
+        print(type(num_sim_sentences), type(num_nonsim_sentences))
+        vocab_non_sim = self._non_sim_data[:num_nonsim_sentences]
+        vocab_sim = self._sim_data[:num_sim_sentences]
+        vocab_processor, sequence_length = build_vocabulary(vocab_sim,
+                                                            vocab_non_sim)
+        if partitions_path:
+            if not isdir(partitions_path):
+                makedirs(partitions_path)
+            pickle.dump(vocab_processor, open(join(partitions_path,
+                                                   "vocab.train"), "wb"))
+            pickle.dump(sequence_length, open(join(partitions_path,
+                                                   "sequence.len"), "wb"))
+
+        return vocab_processor
+
+    def balance_partitions(self, partitions_path,  one_hot=False, split_files=False):
+        """ Write a balance set o"""
+        vocab_processor = self.create_vocabularies(133263, 231027, partitions_path)
+        # Create and save the  TRAIN FILE
+        if not split_files:
+            writer = tf.python_io.TFRecordWriter(join(partitions_path, "train.tfrecords"))
+        else:
+            writer_sim = tf.python_io.TFRecordWriter(join(partitions_path, "train_sim.tfrecords"))
+            writer_dis = tf.python_io.TFRecordWriter(join(partitions_path, "train_dis.tfrecords"))
+
+        lines = 0
+        # Mixed part: similar and non similar sentences
+        for i in range(133263):
+            # Write a non similar sentence
+            data = self._non_sim_data[i]
+            data_idx = self.to_index_data(data, vocab_processor)
+            if not split_files:
+                write_tfrecord(writer, data_idx, one_hot)
+            else:
+                write_tfrecord(writer_dis, data_idx, one_hot)
+            # Write a similar sentence
+            data = self._sim_data[i]
+            data_idx = self.to_index_data(data, vocab_processor)
+            if not split_files:
+                write_tfrecord(writer, data_idx, one_hot)
+            else:
+                write_tfrecord(writer_sim, data_idx, one_hot)
+            lines += 2
+        # Remaining dissimilar sentences and random similar ones
+        for i in range(133263, 231027):
+            # Write a non similar sentence
+            data = self._non_sim_data[i]
+            data_idx = self.to_index_data(data, vocab_processor)
+            if not split_files:
+                write_tfrecord(writer, data_idx, one_hot)
+            else:
+                write_tfrecord(writer_dis, data_idx, one_hot)
+            # Write a random similar sentence
+            data_idx = self._sim_data[randrange(0, 133263)]
+            if not split_files:
+                write_tfrecord(writer, data_idx, one_hot)
+            else:
+                write_tfrecord(writer_sim, data_idx, one_hot)
+            lines += 2
+        print("Saved {} data examples for training".format(lines))
+
+        # Create and save the  DEV FILE
+        writer = tf.python_io.TFRecordWriter(join(partitions_path, "dev.tfrecords"))
+        lines = 0
+        # Mixed part: similar and non similar sentences
+        for i, j in zip(range(231027, 239027), range(133263, 141263)):
+            data = self._non_sim_data[i]
+            data_idx = self.to_index_data(data, vocab_processor)
+            write_tfrecord(writer, data_idx, one_hot)
+
+            data = self._sim_data[j]
+            data_idx = self.to_index_data(data, vocab_processor)
+            write_tfrecord(writer, data_idx, one_hot)
+
+            lines += 2
+
+        # Remaining dissimilar dev sentences
+        for i in range(239027, 243027):
+            data = self._non_sim_data[i]
+            data_idx = self.to_index_data(data, vocab_processor)
+            write_tfrecord(writer, data_idx, one_hot)
+            lines += 1
+        print("Saved {} data examples for development".format(lines))
+
+        # Create and save the  TEST FILE
+        writer = tf.python_io.TFRecordWriter(join(partitions_path, "test.tfrecords"))
+
+        lines = 0
+        # Mixed part: similar and non similar sentences
+        for i, j in zip(range(243027, 251027), range(141263, 149263)):
+            data = self._non_sim_data[i]
+            data_idx = self.to_index_data(data, vocab_processor)
+            write_tfrecord(writer, data_idx, one_hot)
+
+            data = self._sim_data[j]
+            data_idx = self.to_index_data(data, vocab_processor)
+            write_tfrecord(writer, data_idx, one_hot)
+            lines += 2
+
+        # Remaining dissimilar test sentences
+        for i in range(251027, 255027):
+            data = self._non_sim_data[i]
+            data_idx = self.to_index_data(data, vocab_processor)
+            write_tfrecord(writer, data_idx, one_hot)
+            lines += 1
+        print("Saved {} data examples for testing".format(lines))
+
     def write_partitions_mixed(self, partitions_path, one_hot=False):
         """ Create the partitions and write them in csv """
 
-        # Create and save the vocabularies
-        vocab_non_sim = self._non_sim_data[:231027]
-        vocab_sim = self._sim_data[:133263]
-        vocab_processor, sequence_length = build_vocabulary(vocab_sim,
-                                                            vocab_non_sim)
-        if not isdir(partitions_path):
-            makedirs(partitions_path)
-
-        pickle.dump(vocab_processor, open(join(partitions_path, "vocab.train"), "wb"))
-        pickle.dump(sequence_length, open(join(partitions_path, "sequence.len"), "wb"))
+        vocab_processor = self.create_vocabularies(133263, 231027, partitions_path)
 
         # Create and save the  TRAIN FILE
         writer = tf.python_io.TFRecordWriter(join(partitions_path, "train.tfrecords"))
@@ -160,6 +265,7 @@ class Corpus:
             lines += 1
         print("Saved {} data examples for testing".format(lines))
 
+    # TODO: To be deleted
     def make_partitions_quora(self):
         self.shuffle()
         vocab_non_sim = self._non_sim_data[:231027]

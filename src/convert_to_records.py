@@ -25,15 +25,12 @@ def get_arguments():
     return args.dataset_path, args.output_path, args.preprocess, args.one_hot
 
 
-def save_partitions(dataset_path, csv_path):
-    dataset = Corpus('quora', dataset_path)
-    dataset.make_partitions_quora(csv_path)
-
-
-def create_tfrecods(dataset_path, output_path, preprocess, max_len, one_hot):
+def create_tfrecods(dataset_path, output_path, preprocess, max_len, one_hot, balanced):
     dataset = Corpus('quora', dataset_path, preprocess, max_len)
-    dataset.write_partitions_mixed(output_path, one_hot)
-
+    if not balanced:
+        dataset.write_partitions_mixed(output_path, one_hot)
+    else:
+        dataset.balance_partitions(output_path+'balance', one_hot)
 
 if __name__ == "__main__":
     # TODO the pre-process is not applied
@@ -52,4 +49,9 @@ if __name__ == "__main__":
     dataset = Corpus('quora', dataset_path, preprocess, max_len)
     print('Read {} similarity sencenteces and {} disimilar.'.format(
         len(dataset.sim_data), len(dataset.non_sim_data)))
-    dataset.write_partitions_mixed(output_path, one_hot)
+    # TODO Include a flag to decide wether to create a balance file or not,
+    # and to create one or several balanced files
+    # dataset.write_partitions_mixed(output_path, one_hot)
+    # print('------------------ BALANCE --------------------------')
+    split_files = True
+    dataset.balance_partitions(output_path, one_hot)
