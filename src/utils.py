@@ -56,10 +56,9 @@ def preprocess_sentence(sentence, max_len=60):
         :param max_len: -1 if all sentences will be pre-processed
                         N sentences longer than N will be pre-process.
     """
-
     en_stopwords = stopwords.words('english')
     if isinstance(sentence, str):
-        if max_len != -1 and len(sentence) > max_len:
+        if max_len == -1 or len(sentence) > max_len:
             return ' '.join([token.lower() for token in word_tokenize(sentence)
                              if token not in en_stopwords])
         else:
