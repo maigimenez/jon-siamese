@@ -49,9 +49,9 @@ if __name__ == "__main__":
     dataset = Corpus('quora', dataset_path, preprocess, max_len)
     print('Read {} similarity sencenteces and {} disimilar.'.format(
         len(dataset.sim_data), len(dataset.non_sim_data)))
-    # TODO Include a flag to decide wether to create a balance file or not,
+    # TODO Include a flag to decide whether to create a balance file or not,
     # and to create one or several balanced files
     # dataset.write_partitions_mixed(output_path, one_hot)
     # print('------------------ BALANCE --------------------------')
     split_files = True
-    dataset.balance_partitions(output_path, one_hot)
+    dataset.balance_partitions(output_path, one_hot, split_files=True)

@@ -22,7 +22,7 @@ class Corpus:
 
         if corpus_name == 'ibm':
             self.load_ibm(path, preprocess)
-        if corpus_name == 'quora':
+        elif corpus_name == 'quora':
             self.load_quora(path, preprocess, max_len)
 
     @property
@@ -80,6 +80,14 @@ class Corpus:
         data.sentence_2 = np.array(list(vocab_processor.transform([data.sentence_2])))[0]
         return data
 
+    def to_index(self, vocab_processor, data=None):
+        for data in self.non_sim_data:
+            data.sentence_1 = np.array(list(vocab_processor.transform([data.sentence_1])))[0]
+            data.sentence_2 = np.array(list(vocab_processor.transform([data.sentence_2])))[0]
+        for data in self.sim_data:
+            data.sentence_1 = np.array(list(vocab_processor.transform([data.sentence_1])))[0]
+            data.sentence_2 = np.array(list(vocab_processor.transform([data.sentence_2])))[0]
+
     def create_vocabularies(self,  num_sim_sentences, num_nonsim_sentences,
                             partitions_path=None):
         """ Create and save the vocabularies
@@ -105,7 +113,7 @@ class Corpus:
         return vocab_processor
 
     def balance_partitions(self, partitions_path,  one_hot=False, split_files=False):
-        """ Write a balance set o"""
+        """ Write a balance set of sentences """
         vocab_processor = self.create_vocabularies(133263, 231027, partitions_path)
         # Create and save the  TRAIN FILE
         if not split_files:
@@ -124,6 +132,7 @@ class Corpus:
                 write_tfrecord(writer, data_idx, one_hot)
             else:
                 write_tfrecord(writer_dis, data_idx, one_hot)
+
             # Write a similar sentence
             data = self._sim_data[i]
             data_idx = self.to_index_data(data, vocab_processor)
@@ -132,6 +141,7 @@ class Corpus:
             else:
                 write_tfrecord(writer_sim, data_idx, one_hot)
             lines += 2
+
         # Remaining dissimilar sentences and random similar ones
         for i in range(133263, 231027):
             # Write a non similar sentence
@@ -141,6 +151,7 @@ class Corpus:
                 write_tfrecord(writer, data_idx, one_hot)
             else:
                 write_tfrecord(writer_dis, data_idx, one_hot)
+
             # Write a random similar sentence
             data_idx = self._sim_data[randrange(0, 133263)]
             if not split_files:
@@ -288,10 +299,3 @@ class Corpus:
         return train_non_sim, train_sim, dev_non_sim, dev_sim, \
                test_non_sim, test_sim, vocab_processor, sequence_length
 
-    def to_index(self, vocab_processor):
-        for data in self.non_sim_data:
-            data.sentence_1 = np.array(list(vocab_processor.transform([data.sentence_1])))[0]
-            data.sentence_2 = np.array(list(vocab_processor.transform([data.sentence_2])))[0]
-        for data in self.sim_data:
-            data.sentence_1 = np.array(list(vocab_processor.transform([data.sentence_1])))[0]
-            data.sentence_2 = np.array(list(vocab_processor.transform([data.sentence_2])))[0]
