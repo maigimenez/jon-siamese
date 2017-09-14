@@ -1,14 +1,18 @@
 import argparse
-from os.path import join, abspath, curdir
+from os.path import join, abspath
 from os import makedirs
 from time import time
+from shutil import copyfile
+from gensim.models import KeyedVectors
+import numpy as np
 
 from corpus import Corpus
-from utils import build_vocabulary, write_flags, read_flags
-from train import train_siamese_fromtf
-from test import test_model
+from utils import build_vocabulary, write_flags, read_flags, load_binarize_data
+from train import train_siamese_fromtf, train_double_siamese
+from test import test_model, test_double
 from validation import dev_step
 from convert_to_records import create_tfrecods
+
 
 def get_arguments():
     parser = argparse.ArgumentParser(description='Train a Siamese Architecture')
@@ -59,18 +63,38 @@ def load_quora():
            test_non_sim, test_sim, vocab_processor, seq_len
 
 
-def quoraTF_default(flags_path, tf_path, out_dir=None):
+def quoraTF_double(flags_path, tf_path, out_dir=None):
     flags = read_flags(flags_path)
     num_epochs = flags.num_epochs
     evaluate_epochs = flags.evaluate_epochs
     for i in range(0, num_epochs, evaluate_epochs):
         # Train n epochs and then evaluate the system
         if not out_dir:
-            out_dir = train_siamese_fromtf(tf_path, flags, evaluate_epochs)
+            out_dir = train_double_siamese(tf_path, flags, evaluate_epochs)
         else:
-            train_siamese_fromtf(tf_path, flags, evaluate_epochs, out_dir)
+            train_double_siamese(tf_path, flags, evaluate_epochs, out_dir)
 
-        dev_step(tf_path, out_dir, flags_path, i)
+        # dev_step(tf_path, out_dir, flags_path, i)
+    copyfile(flags_path, join(out_dir, 'flags.config'))
+    test_double(tf_path, out_dir, flags_path)
+
+
+def quoraTF_default(flags_path, tf_path, out_dir=None, init_embeddings=None):
+    flags = read_flags(flags_path)
+    num_epochs = flags.num_epochs
+    evaluate_epochs = flags.evaluate_epochs
+
+    for i in range(0, num_epochs, evaluate_epochs):
+        # Train n epochs and then evaluate the system
+        if not out_dir:
+            out_dir = train_siamese_fromtf(tf_path, flags, evaluate_epochs,
+                                           init_embeddings=init_embeddings)
+        else:
+            train_siamese_fromtf(tf_path, flags, evaluate_epochs, out_dir,
+                                 init_embeddings=init_embeddings)
+
+        # dev_step(tf_path, out_dir, flags_path, i)
+    copyfile(flags_path, join(out_dir, 'flags.config'))
     test_model(tf_path, out_dir, flags_path)
 
 
@@ -123,13 +147,36 @@ def quoraTF_experiments(tensors_path):
                                 # # Test the model
                                 # test_model(tensors_path, out_dir, flags_path)
 
+def load_embeddings(tf_path, flags_path):
+    # Load the vocabulary
+    vocab_processor_path = join(tf_path, 'vocab.train')
+    vocab_processor = load_binarize_data(vocab_processor_path)
+    vocab_dictionary = vocab_processor.vocabulary_._mapping
+    sorted_vocab = sorted(vocab_dictionary.items(), key=lambda x: x[1])
+
+    flags = read_flags(flags_path)
+
+    w2v_path = "/home/mgimenez/Dev/corpora/w2v/GoogleNews-vectors-negative300.bin"
+    w2v = KeyedVectors.load_word2vec_format(w2v_path, binary=True)
+    init_embedding = np.random.uniform(-1.0, 1.0, (len(vocab_processor.vocabulary_),
+                                                   flags.embedding_dim))
+    for word, word_idx in sorted_vocab:
+        if word in w2v:
+            init_embedding[word_idx] = w2v[word]
+
+    return init_embedding
+
 if __name__ == "__main__":
 
     flags_path, dataset_path, tf_path = get_arguments()
+    # quoraTF_double(flags_path, tf_path)
 
-    if flags_path:
-        quoraTF_default(flags_path, tf_path)
-    else:
-        # TODO: Generate them
-        # create_tfrecods(dataset_path, tensors_path, False, False)
-        quoraTF_experiments(tf_path)
+    embeddings = load_embeddings(tf_path, flags_path)
+    quoraTF_default(flags_path, tf_path, init_embeddings=embeddings)
+
+    # if flags_path:
+    #     quoraTF_default(flags_path, tf_path)
+    # else:
+    #     # TODO: Generate them
+    #     # create_tfrecods(dataset_path, tensors_path, False, False)
+    #     quoraTF_experiments(tf_path)

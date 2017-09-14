@@ -1,11 +1,11 @@
 import tensorflow as tf
 from utils import contrastive_loss
 
-
 class Siamese:
 
     # Create model
-    def __init__(self, sequence_length, vocab_size, embedding_size, filter_sizes, num_filters, margin):
+    def __init__(self, sequence_length, vocab_size, embedding_size,
+                 filter_sizes, num_filters, margin):
         with tf.name_scope("embeddings") as embeddings_scope:
             self.filter_sizes = filter_sizes
             self.embedding_size = embedding_size
@@ -57,6 +57,7 @@ class Siamese:
             self.predictions = tf.cast(self.predictions, 'float32')
             self.correct_predictions = tf.equal(self.predictions, self.labels)
             self.accuracy = tf.reduce_mean(tf.cast(self.correct_predictions, tf.float32))
+
 
     def subnet(self, input_sentence, sub_name, reuse=False):
         with tf.name_scope("subnet_"+sub_name):

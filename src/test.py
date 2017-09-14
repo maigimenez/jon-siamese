@@ -6,6 +6,7 @@ plt.switch_backend('agg')
 import argparse
 from utils import read_flags, load_binarize_data, input_pipeline_test, best_score
 from siamese import Siamese
+from double_siamese import DoubleSiamese
 
 def get_arguments():
     parser = argparse.ArgumentParser(description='Test a Siamese Architecture')
@@ -21,6 +22,102 @@ def get_arguments():
 
     args = parser.parse_args()
     return args.tf_path, args.model_path, args.flags_path
+
+
+def test_double(tf_path, model_path, flags_path):
+    # Import the parameters binarized
+    test_tfrecors = join(tf_path, 'test.tfrecords')
+    vocab_processor_path = join(tf_path, 'vocab.train')
+    vocab_processor = load_binarize_data(vocab_processor_path)
+    sequence_length_path = join(tf_path, 'sequence.len')
+    seq_len = load_binarize_data(sequence_length_path)
+    FLAGS = read_flags(flags_path)
+    # TODO Remove this from the siamese class
+    fully_layer = True if FLAGS.hash_size else False
+    # TODO this is a parameter
+    one_hot = False
+    n_labels = 2 if one_hot else 1
+
+    # TEST THE SYSTEM
+    with tf.Graph().as_default():
+
+        label_batch, test_1_batch, test_2_batch = input_pipeline_test(filepath=test_tfrecors,
+                                                                      batch_size=1,
+                                                                      num_labels=n_labels,
+                                                                      sequence_len=seq_len,
+                                                                      num_epochs=1)
+
+        print(type(label_batch), type(test_1_batch), type(test_2_batch))
+        double_siam = DoubleSiamese(sequence_length=seq_len,
+                          vocab_size=len(vocab_processor.vocabulary_),
+                          embedding_size=FLAGS.embedding_dim,
+                          filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
+                          num_filters=FLAGS.num_filters,
+                          margin=FLAGS.margin)
+
+        init_op = tf.global_variables_initializer()
+        init_again = tf.local_variables_initializer()
+
+        saver = tf.train.Saver()
+
+        with tf.Session() as sess:
+            # Initialize variables
+            sess.run(init_op)
+            sess.run(init_again)
+
+            # Restore the model
+            saver.restore(sess, join(model_path, "model.ckpt"))
+
+            # Create the coordinators to read the test data
+            coord = tf.train.Coordinator()
+
+            threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+            test_sample, hits = 0, 0
+
+            try:
+                while not coord.should_stop():
+                    test_1, test_2, test_label = sess.run([test_1_batch, test_2_batch, label_batch])
+                    # TEST CLASSIFICATION
+                    loss, distance, accuracy = sess.run([double_siam.loss,
+                                               double_siam.sim_branch.distance,
+                                               double_siam.sim_branch.accuracy],
+                                 feed_dict={
+                                     double_siam.sim_branch.left_input: test_1,
+                                     double_siam.sim_branch.right_input: test_2,
+                                     double_siam.sim_branch.labels: test_label,
+                                     double_siam.sim_branch.is_training: False,
+                                     double_siam.disim_branch.left_input: test_1,
+                                     double_siam.disim_branch.right_input: test_2,
+                                     double_siam.disim_branch.labels: test_label,
+                                     double_siam.disim_branch.is_training: False
+                                 })
+
+                    with open(join(model_path, 'test.log'), 'a') as log_file:
+                        log_str = "(#{0: <5} - {1}) - Loss: {2:.4f} - (d: {3:.4f})\n"
+                        log_file.write(log_str.format(test_sample,
+                                                      test_label[0][0],
+                                                      loss,
+                                                      distance[0]))
+
+                    with open(join(model_path, 'distances.log'), 'a') as dist_file:
+                        log_str = "{}\t{}\n"
+                        dist_file.write(log_str.format(distance[0], test_label[0][0]))
+                    test_sample += 1
+                    if accuracy == 1:
+                        hits += 1
+            except tf.errors.OutOfRangeError:
+                print("Done testing!")
+            finally:
+                coord.request_stop()
+
+            coord.join(threads)
+            sess.close()
+
+            with open(join(model_path, 'results.txt'), 'w') as results_file:
+                results_file.write("Accuracy: {} ({}/{})".format(hits / test_sample, hits, test_sample))
+
+            print("Results saved in: {}".format(join(model_path, 'results.txt')))
+            plot_distances(model_path)
 
 
 

@@ -5,6 +5,7 @@ from os import makedirs
 from time import time
 
 from siamese import Siamese
+from double_siamese import DoubleSiamese
 from utils import shuffle_epochs, batch_iter, get_dev_data, load_binarize_data
 
 
@@ -44,8 +45,112 @@ def input_pipeline(filepath, batch_size, num_labels, sequence_len, num_epochs=No
                                                    min_after_dequeue=100)
         return label_batch, sentences_1_batch, sentences_2_batch
 
+def train_double_siamese(tf_path, flags, num_epochs, out_dir=None, init_embeddings=None):
+    tf.logging.set_verbosity(tf.logging.INFO)
 
-def train_siamese_fromtf(tf_path, flags, num_epochs, out_dir=None, one_hot=False, verbose=False):
+    # Create the directory where the training will be saved
+    if not out_dir:
+        timestamp = str(int(time()))
+        out_dir = abspath(join(curdir, "models", timestamp))
+        makedirs(out_dir, exist_ok=True)
+
+    # Load the records
+    train_sim_path = join(tf_path, 'train_sim.tfrecords')
+    train_dis_path = join(tf_path, 'train_dis.tfrecords')
+    vocab_processor_path = join(tf_path, 'vocab.train')
+    vocab_processor = load_binarize_data(vocab_processor_path)
+    sequence_length_path = join(tf_path, 'sequence.len')
+    seq_len = load_binarize_data(sequence_length_path)
+
+    n_labels = 1
+
+    with tf.Graph().as_default():
+        # Get similar sentences batch
+        slabel_batch, s1_batch, s2_batch = input_pipeline(filepath=train_sim_path,
+                                                          batch_size=flags.batch_size,
+                                                          num_labels=n_labels,
+                                                          sequence_len=seq_len,
+                                                          num_epochs=num_epochs)
+        # Get non-similar sentences batch
+        dlabel_batch, d1_batch, d2_batch = input_pipeline(filepath=train_dis_path,
+                                                          batch_size=flags.batch_size,
+                                                          num_labels=n_labels,
+                                                          sequence_len=seq_len,
+                                                          num_epochs=num_epochs)
+        double_siam = DoubleSiamese(sequence_length=seq_len,
+                                    vocab_size=len(vocab_processor.vocabulary_),
+                                    embedding_size=flags.embedding_dim,
+                                    filter_sizes=list(map(int, flags.filter_sizes.split(","))),
+                                    num_filters=flags.num_filters,
+                                    margin=flags.margin)
+
+        global_step = tf.Variable(0, trainable=False)
+
+        train_op = tf.train.MomentumOptimizer(0.01, 0.5, use_nesterov=True)
+        train_op = train_op.minimize(double_siam.loss, global_step=global_step)
+
+        init_op = tf.global_variables_initializer()
+        init_again = tf.local_variables_initializer()
+
+        saver = tf.train.Saver()
+        session_conf = tf.ConfigProto(allow_soft_placement=flags.allow_soft_placement,
+                                      log_device_placement=flags.log_device_placement)
+        sess = tf.Session(config=session_conf)
+        with sess.as_default() as sess:
+            sess.run(init_op)
+            sess.run(init_again)
+
+            # Show which variables are going to be train
+            variables_names = [v.name for v in tf.trainable_variables()]
+            values = sess.run(variables_names)
+            for k, v in zip(variables_names, values):
+                print("Variable: ", k, "- Shape: ", v.shape)
+
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(coord=coord, sess=sess)
+            try:
+                while not coord.should_stop():
+                    slabels, s1, s2 = sess.run([slabel_batch, s1_batch, s2_batch])
+                    dlabels, d1, d2 = sess.run([dlabel_batch, d1_batch, d2_batch])
+                    current_step = tf.train.global_step(sess, global_step)
+                    _, loss = sess.run([train_op, double_siam.loss],
+                                       feed_dict={
+                                           double_siam.sim_branch.left_input: s1,
+                                           double_siam.sim_branch.right_input: s2,
+                                           double_siam.sim_branch.labels: slabels,
+                                           double_siam.disim_branch.left_input: d1,
+                                           double_siam.disim_branch.right_input: d2,
+                                           double_siam.disim_branch.labels: dlabels,
+                                           double_siam.sim_branch.is_training: True,
+                                           double_siam.disim_branch.is_training: True
+                         })
+
+
+            except tf.errors.OutOfRangeError:
+                print("Done training!")
+            finally:
+                coord.request_stop()
+
+            coord.join(threads)
+
+            # Save the model
+            if not out_dir:
+                timestamp = str(int(time()))
+                out_dir = abspath(join(curdir, "models", timestamp))
+                makedirs(out_dir, exist_ok=True)
+
+            with open(join(out_dir, 'parameters.txt'), 'w') as param_file:
+                param_file.write("Default parameters: \n")
+                for attr, value in sorted(flags.__flags.items()):
+                    param_file.write(" - {}={}\n".format(attr.upper(), value))
+
+            save_path = saver.save(sess, join(out_dir, "model.ckpt"))
+            print("Model saved in file: {}".format(save_path))
+            return out_dir
+
+
+def train_siamese_fromtf(tf_path, flags, num_epochs, out_dir=None, one_hot=False,
+                         verbose=False, init_embeddings=None):
     """ Train a Siamese NN using a tfrecords as an input"""
 
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -93,11 +198,12 @@ def train_siamese_fromtf(tf_path, flags, num_epochs, out_dir=None, one_hot=False
         # grads_and_vars = optimizer.compute_gradients(siamese.loss)
         # train_op = optimizer.apply_gradients(grads_and_vars, global_step=global_step)
 
-        # starter_learning_rate = 0.1
-        # learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
-        #                                            100000, 0.96, staircase=True)
+        starter_learning_rate = 0.01
+        learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
+                                                   1000000, 0.95, staircase=False)
+        train_op = tf.train.MomentumOptimizer(learning_rate, 0.5, use_nesterov=True)
 
-        train_op = tf.train.MomentumOptimizer(0.01, 0.5, use_nesterov=True)
+        # train_op = tf.train.MomentumOptimizer(0.01, 0.5, use_nesterov=True)
         train_op = train_op.minimize(siamese.loss, global_step=global_step)
 
         init_op = tf.global_variables_initializer()
@@ -133,6 +239,10 @@ def train_siamese_fromtf(tf_path, flags, num_epochs, out_dir=None, one_hot=False
             values = sess.run(variables_names)
             for k, v in zip(variables_names, values):
                 print("Variable: ", k, "- Shape: ", v.shape)
+
+            # Load embeddings
+            if init_embeddings is not None:
+                sess.run(siamese.W_embedding.assign(init_embeddings))
 
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(coord=coord, sess=sess)
