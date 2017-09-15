@@ -2,11 +2,15 @@ import tensorflow as tf
 from utils import preprocess_sentence
 from data import Data
 from random import shuffle, randrange
-import numpy as np
 from utils import build_vocabulary, write_tfrecord
 from os.path import join, isdir
 from os import makedirs
+
 import pickle
+import csv
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import numpy as np
 
 class Corpus:
     def __init__(self, corpus_name, path, preprocess=None, max_len=None):
@@ -24,7 +28,8 @@ class Corpus:
             self.load_ibm(path, preprocess)
         elif corpus_name == 'quora':
             self.load_quora(path, preprocess, max_len)
-
+        elif corpus_name == 'p4p':
+            self.load_p4p(path)
     @property
     def sim_data(self):
         return self._sim_data
@@ -32,7 +37,6 @@ class Corpus:
     @property
     def non_sim_data(self):
         return self._non_sim_data
-
 
     def save_data(self, preprocess, max_len, qid, q1, q2, label):
         if preprocess:
@@ -70,6 +74,21 @@ class Corpus:
                         qid, _, _, q1, q2, label = aux_line.strip().split('\t')
                         aux_line = ''
                         self.save_data(preprocess, max_len, qid, q1, q2, label)
+
+    def load_p4p(self, path):
+        # TODO Get the preprocess values from the console arguments
+        preprocess, max_len = False, None
+        with open(path) as dataset_file:
+            dataset_reader = csv.reader(dataset_file, delimiter='\t')
+            next(dataset_reader)
+            for qid, line in enumerate(dataset_reader):
+                if len(line) == 9:
+                    sen_1, sen_2, tag = line[0], line[1], line[2]
+                    if tag == 'Plagio':
+                        self.save_data(preprocess, max_len, str(qid)+'_1', sen_1, sen_2, '1')
+                    else:
+                        self.save_data(preprocess, max_len, str(qid)+'_2', sen_1, sen_2, '0')
+
 
     def shuffle(self):
         shuffle(self._sim_data)
