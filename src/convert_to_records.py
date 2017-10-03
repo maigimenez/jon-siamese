@@ -1,5 +1,7 @@
-from corpus import Corpus
+from corpus_ms import CorpusMS
+from corpus_quora import CorpusQuora
 import argparse
+from os.path import join
 
 
 def get_arguments():
@@ -48,7 +50,9 @@ if __name__ == "__main__":
     max_len = None
 
     # Convert the preprocess flag to boolean values and get the max length of the sentence to preprocess
-    if preprocess_flag.lower() == 'no':
+    if not preprocess_flag:
+        preprocess = False
+    elif preprocess_flag.lower() == 'no':
         preprocess = False
     else:
         preprocess = True
@@ -57,13 +61,27 @@ if __name__ == "__main__":
         else:
             max_len = int(preprocess_flag)
 
-    # Create and save the partitions
-    dataset = Corpus(corpus, dataset_path, preprocess, max_len)
-    print('Read {} similarity sencenteces and {} disimilar.'.format(
-        len(dataset.sim_data), len(dataset.non_sim_data)))
+    if corpus == 'quora':
+        # Create and save the partitions
+        dataset = CorpusQuora(dataset_path, preprocess, max_len)
+        print('Read {} similarity sencenteces and {} disimilar.'.format(
+            len(dataset.sim_data), len(dataset.non_sim_data)))
+        if balanced:
+            dataset.balance_partitions(output_path, one_hot, split_files=True)
+        else:
+            dataset.write_partitions_mixed(output_path, one_hot)
 
-    if balanced:
-        split_files = True
-        dataset.balance_partitions(output_path, one_hot, split_files=True)
-    else:
-        dataset.write_partitions_mixed(output_path, one_hot)
+    elif corpus == 'microsoft':
+        # Load the train
+        train = CorpusMS(join(dataset_path, 'msr_paraphrase_train.txt'),
+                       preprocess, max_len)
+        print('[TRAIN] Read {} similarity sencenteces and {} disimilar.'.format(
+            len(train.sim_data), len(train.non_sim_data)))
+        vocabulary = train.write_tensors(output_path, 'train', split_files=balanced)
+
+        # Load the test
+        test = CorpusMS(join(dataset_path, 'msr_paraphrase_test.txt'),
+                      preprocess, max_len)
+        print('[TEST] Read {} similarity sencenteces and {} disimilar.'.format(
+            len(test.sim_data), len(test.non_sim_data)))
+        test.write_tensors(output_path, 'test', vocab_processor=vocabulary)
