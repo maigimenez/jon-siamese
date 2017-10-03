@@ -19,14 +19,21 @@ def get_arguments():
     parser.add_argument('--flags', metavar='f', type=str,
                         help='Path where the flags for training are',
                         dest='flags_path')
+
     parser.add_argument('--data', metavar='d', type=str,
                         help='Path where the Quora dataset is.',
                         dest='dataset_path')
+
     parser.add_argument('--tf', metavar='f', type=str,
                         help='Path where tfrecords are located',
                         dest='tf_path')
+
+    parser.add_argument('-d', action='store_true', default=False,
+                        help='Train a double siamese',
+                        dest='double')
+
     args = parser.parse_args()
-    return args.flags_path, args.dataset_path, args.tf_path
+    return args.flags_path, args.dataset_path, args.tf_path, args.double
 
 
 def load_ibm():
@@ -85,6 +92,7 @@ def quoraTF_default(flags_path, tf_path, out_dir=None, init_embeddings=None):
     evaluate_epochs = flags.evaluate_epochs
 
     for i in range(0, num_epochs, evaluate_epochs):
+
         # Train n epochs and then evaluate the system
         if not out_dir:
             out_dir = train_siamese_fromtf(tf_path, flags, evaluate_epochs,
@@ -94,7 +102,9 @@ def quoraTF_default(flags_path, tf_path, out_dir=None, init_embeddings=None):
                                  init_embeddings=init_embeddings)
 
         # dev_step(tf_path, out_dir, flags_path, i)
+    print(' -----------------> ', out_dir)
     copyfile(flags_path, join(out_dir, 'flags.config'))
+    print(' -----------------> ', out_dir)
     test_model(tf_path, out_dir, flags_path)
 
 
@@ -156,7 +166,7 @@ def load_embeddings(tf_path, flags_path):
 
     flags = read_flags(flags_path)
 
-    w2v_path = "/home/mgimenez/Dev/corpora/w2v/GoogleNews-vectors-negative300.bin"
+    w2v_path = "/home/mgimenez/Dev/resources/w2v/GoogleNews-vectors-negative300.bin"
     w2v = KeyedVectors.load_word2vec_format(w2v_path, binary=True)
     init_embedding = np.random.uniform(-1.0, 1.0, (len(vocab_processor.vocabulary_),
                                                    flags.embedding_dim))
@@ -168,11 +178,13 @@ def load_embeddings(tf_path, flags_path):
 
 if __name__ == "__main__":
 
-    flags_path, dataset_path, tf_path = get_arguments()
-    # quoraTF_double(flags_path, tf_path)
-
+    flags_path, dataset_path, tf_path, double = get_arguments()
     embeddings = load_embeddings(tf_path, flags_path)
-    quoraTF_default(flags_path, tf_path, init_embeddings=embeddings)
+
+    if double:
+        quoraTF_double(flags_path, tf_path)
+    else:
+        quoraTF_default(flags_path, tf_path, init_embeddings=embeddings)
 
     # if flags_path:
     #     quoraTF_default(flags_path, tf_path)
